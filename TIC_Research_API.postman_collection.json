@@ -1,0 +1,358 @@
+{
+	"info": {
+		"_postman_id": "tic-research-api-collection",
+		"name": "TIC Research API",
+		"description": "Testing, Inspection, and Certification Research API - Complete collection for testing all endpoints",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/health",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"health"
+					]
+				},
+				"description": "Check if the API server is running and healthy"
+			},
+			"response": []
+		},
+		{
+			"name": "Root Endpoint",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						""
+					]
+				},
+				"description": "Get API information and available endpoints"
+			},
+			"response": []
+		},
+		{
+			"name": "Start Research - Comprehensive",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"research_question\": \"What certifications are required to export electronics to the US?\",\n  \"domain_list_metadata\": [\n    {\n      \"name\": \"UL (Underwriters Laboratories)\",\n      \"homepage\": \"https://www.ul.com\",\n      \"domain\": \"ul.com\",\n      \"region\": \"United States\",\n      \"org_type\": \"Private\",\n      \"aliases\": [\"Underwriters Laboratories\", \"UL\"],\n      \"industry_tags\": [\"Electronics\", \"Safety\", \"Certification\"],\n      \"semantic_profile\": \"Leading global safety science company providing testing, inspection, and certification services for products and systems\",\n      \"boost_keywords\": [\"safety\", \"certification\", \"testing\", \"standards\", \"compliance\"]\n    },\n    {\n      \"name\": \"Consumer Product Safety Commission\",\n      \"homepage\": \"https://www.cpsc.gov\",\n      \"domain\": \"cpsc.gov\",\n      \"region\": \"United States\",\n      \"org_type\": \"Government\",\n      \"aliases\": [\"CPSC\", \"Consumer Safety\"],\n      \"industry_tags\": [\"Consumer Products\", \"Safety\", \"Regulation\"],\n      \"semantic_profile\": \"Federal agency responsible for protecting the public from unreasonable risks of injury or death from consumer products\",\n      \"boost_keywords\": [\"consumer safety\", \"product safety\", \"regulations\", \"standards\", \"compliance\"]\n    },\n    {\n      \"name\": \"International Organization for Standardization\",\n      \"homepage\": \"https://www.iso.org\",\n      \"domain\": \"iso.org\",\n      \"region\": \"International\",\n      \"org_type\": \"StandardsBody\",\n      \"aliases\": [\"ISO\", \"International Standards\"],\n      \"industry_tags\": [\"Standards\", \"Certification\", \"Quality\"],\n      \"semantic_profile\": \"International standard-setting body composed of representatives from various national standards organizations\",\n      \"boost_keywords\": [\"standards\", \"certification\", \"quality\", \"compliance\", \"international\"]\n    }\n  ],\n  \"chat_history\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"I need to export electronics to the US market\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"content\": \"I can help you understand the certification requirements for exporting electronics to the US. Let me research the current standards and regulations.\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/research",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"research"
+					]
+				},
+				"description": "Start a comprehensive research request (expected to use Provide_a_List workflow)"
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// Set request_id from response for follow-up requests",
+							"if (pm.response.code === 200) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set(\"request_id\", response.request_id);",
+							"    console.log(`Research started with ID: ${response.request_id}`);",
+							"    console.log(`Status: ${response.status} - ${response.message}`);",
+							"} else {",
+							"    console.error(`Failed to start research: ${pm.response.status} - ${pm.response.text()}`);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"response": []
+		},
+		{
+			"name": "Start Research - Specific Question",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"research_question\": \"How do I get UL certification for my product?\",\n  \"domain_list_metadata\": [\n    {\n      \"name\": \"UL (Underwriters Laboratories)\",\n      \"homepage\": \"https://www.ul.com\",\n      \"domain\": \"ul.com\",\n      \"region\": \"United States\",\n      \"org_type\": \"Private\",\n      \"aliases\": [\"Underwriters Laboratories\", \"UL\"],\n      \"industry_tags\": [\"Electronics\", \"Safety\", \"Certification\"],\n      \"semantic_profile\": \"Leading global safety science company providing testing, inspection, and certification services for products and systems\",\n      \"boost_keywords\": [\"safety\", \"certification\", \"testing\", \"standards\", \"compliance\"]\n    },\n    {\n      \"name\": \"Consumer Product Safety Commission\",\n      \"homepage\": \"https://www.cpsc.gov\",\n      \"domain\": \"cpsc.gov\",\n      \"region\": \"United States\",\n      \"org_type\": \"Government\",\n      \"aliases\": [\"CPSC\", \"Consumer Safety\"],\n      \"industry_tags\": [\"Consumer Products\", \"Safety\", \"Regulation\"],\n      \"semantic_profile\": \"Federal agency responsible for protecting the public from unreasonable risks of injury or death from consumer products\",\n      \"boost_keywords\": [\"consumer safety\", \"product safety\", \"regulations\", \"standards\", \"compliance\"]\n    }\n  ],\n  \"chat_history\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"I need UL certification for my electronics product\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"content\": \"I can help you understand the UL certification process. Let me research the current requirements and procedures.\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/research",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"research"
+					]
+				},
+				"description": "Start a specific question research request (expected to use TIC_Specific_Questions workflow)"
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// Set request_id from response for follow-up requests",
+							"if (pm.response.code === 200) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set(\"request_id\", response.request_id);",
+							"    console.log(`Research started with ID: ${response.request_id}`);",
+							"    console.log(`Status: ${response.status} - ${response.message}`);",
+							"} else {",
+							"    console.error(`Failed to start research: ${pm.response.status} - ${pm.response.text()}`);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"response": []
+		},
+		{
+			"name": "Check Research Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/research/{{request_id}}/status",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"research",
+						"{{request_id}}",
+						"status"
+					]
+				},
+				"description": "Check the status of a research request"
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// Log status information",
+							"if (pm.response.code === 200) {",
+							"    const response = pm.response.json();",
+							"    console.log(`Status: ${response.status} - ${response.message}`);",
+							"    if (response.progress) {",
+							"        console.log(`Progress: ${(response.progress * 100).toFixed(1)}%`);",
+							"    }",
+							"    ",
+							"    // Auto-advise next step",
+							"    if (response.status === 'completed' || response.status === 'failed') {",
+							"        console.log('✅ Research finished! Use \"Get Research Results\" to retrieve the final data.');",
+							"    } else if (response.status === 'processing') {",
+							"        console.log('⏳ Research in progress... Check status again in a few seconds.');",
+							"    }",
+							"} else {",
+							"    console.error(`Failed to get status: ${pm.response.status} - ${pm.response.text()}`);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"response": []
+		},
+		{
+			"name": "Get Research Results",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/research/{{request_id}}",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"research",
+						"{{request_id}}"
+					]
+				},
+				"description": "Get the complete results of a research request"
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// Analyze and log research results",
+							"if (pm.response.code === 200) {",
+							"    const response = pm.response.json();",
+							"    console.log('📊 RESEARCH RESULTS SUMMARY:');",
+							"    console.log(`Request ID: ${response.request_id}`);",
+							"    console.log(`Status: ${response.status}`);",
+							"    console.log(`Workflow: ${response.workflow_type || 'N/A'}`);",
+							"    console.log(`Processing Time: ${response.processing_time?.toFixed(2) || 'N/A'} seconds`);",
+							"    ",
+							"    if (response.execution_summary) {",
+							"        console.log('📈 Execution Summary:');",
+							"        console.log(`  Total Time: ${response.execution_summary.total_time_seconds?.toFixed(2) || 'N/A'} seconds`);",
+							"        console.log(`  Total Searches: ${response.execution_summary.total_searches || 'N/A'}`);",
+							"        console.log(`  General Searches: ${response.execution_summary.general_searches || 'N/A'}`);",
+							"        console.log(`  Domain Searches: ${response.execution_summary.domain_searches || 'N/A'}`);",
+							"    }",
+							"    ",
+							"    if (response.search_results) {",
+							"        console.log(`🔍 Search Results: ${response.search_results.length} total`);",
+							"        response.search_results.forEach((result, index) => {",
+							"            console.log(`  ${index + 1}. Type: ${result.search_type}, Status: ${result.status}`);",
+							"        });",
+							"    }",
+							"    ",
+							"    if (response.query_mappings) {",
+							"        console.log(`🗺️ Query Mappings: ${response.query_mappings.length} queries mapped`);",
+							"    }",
+							"} else {",
+							"    console.error(`Failed to get results: ${pm.response.status} - ${pm.response.text()}`);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"response": []
+		},
+		{
+			"name": "Test Error Cases",
+			"item": [
+				{
+					"name": "Invalid Request - Missing Question",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"domain_list_metadata\": [\n    {\n      \"name\": \"UL (Underwriters Laboratories)\",\n      \"homepage\": \"https://www.ul.com\",\n      \"domain\": \"ul.com\",\n      \"region\": \"United States\",\n      \"org_type\": \"Private\",\n      \"aliases\": [\"Underwriters Laboratories\", \"UL\"],\n      \"industry_tags\": [\"Electronics\", \"Safety\", \"Certification\"],\n      \"semantic_profile\": \"Leading global safety science company providing testing, inspection, and certification services for products and systems\",\n      \"boost_keywords\": [\"safety\", \"certification\", \"testing\", \"standards\", \"compliance\"]\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/research",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"research"
+							]
+						},
+						"description": "Test error handling for missing research question"
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid Request - Missing Domain Metadata",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"research_question\": \"What certifications are required?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/research",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"research"
+							]
+						},
+						"description": "Test error handling for missing domain metadata"
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid Request ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/research/invalid-request-id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"research",
+								"invalid-request-id"
+							]
+						},
+						"description": "Test error handling for invalid request ID"
+					},
+					"response": []
+				}
+			],
+			"description": "Test various error scenarios to ensure proper error handling"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global pre-request script",
+					"console.log(`Making request to: ${pm.request.url}`);"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test script",
+					"console.log(`Response status: ${pm.response.status}`);",
+					"console.log(`Response time: ${pm.response.responseTime}ms`);"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "request_id",
+			"value": "",
+			"type": "string"
+		}
+	]
+} 
