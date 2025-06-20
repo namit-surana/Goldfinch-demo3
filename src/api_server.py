@@ -163,8 +163,10 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 print(f"🤖 Router decided to use: {function_name} (took {router_time:.2f}s)")
                 return function_name
             else:
-                print("❌ No tool selected. Stopping.")
-                return None
+                # No tool selected - return the LLM's direct response
+                direct_response = response.choices[0].message.content
+                print(f"🤖 No tool selected - returning direct LLM response (took {router_time:.2f}s)")
+                return {"type": "direct_response", "content": direct_response}
                 
         except asyncio.TimeoutError:
             print("❌ Router timeout: Took longer than 15 seconds to decide. Stopping.")
@@ -498,6 +500,37 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             elif router_decision == "Search_the_Internet":
                 # Direct search approach
                 return await self.execute_tic_specific_questions_workflow(research_question)
+                
+            elif isinstance(router_decision, dict) and router_decision.get("type") == "direct_response":
+                # Handle direct LLM response (no tool selected)
+                print_separator("💬 DIRECT LLM RESPONSE")
+                workflow_start = time.time()
+                
+                result_data = {
+                    "request_id": str(uuid.uuid4()),
+                    "status": "completed",
+                    "message": "Direct LLM response provided.",
+                    "research_question": research_question,
+                    "workflow_type": "direct_response",
+                    "execution_summary": {
+                        "total_time_seconds": time.time() - workflow_start,
+                        "response_type": "direct_llm_response"
+                    },
+                    "search_results": [{
+                        "query": research_question,
+                        "result": router_decision["content"],
+                        "citations": [],
+                        "extracted_links": [],
+                        "status": "success",
+                        "search_type": "direct_llm_response",
+                        "websites": []
+                    }],
+                    "timestamp": datetime.now().isoformat(),
+                    "processing_time": time.time() - workflow_start
+                }
+                
+                print(f"✅ Direct response provided in {time.time() - workflow_start:.2f} seconds")
+                return result_data
                 
             else:
                 print(f"❌ Unknown tool selected: {router_decision}")
