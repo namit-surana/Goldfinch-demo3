@@ -1,0 +1,27 @@
+services:
+  # A web service for our FastAPI application
+  - type: web
+    name: tic-research-api
+    env: python
+    region: oregon # You can choose a region closer to you, e.g., frankfurt, ohio, singapore
+    plan: free # Or "starter" for more resources
+    
+    # The command to install all your dependencies
+    buildCommand: "pip install -r requirements.txt"
+    
+    # The command to start your API server
+    # Render automatically sets the $PORT environment variable
+    startCommand: "uvicorn src.api_server:app --host 0.0.0.0 --port $PORT"
+    
+    # Health Check endpoint that Render uses to know if your app is live
+    healthCheckPath: /health
+    
+    # Environment variables for your API keys
+    # IMPORTANT: You must add the actual values in the Render dashboard.
+    envVars:
+      - key: OPENAI_API_KEY
+        value: "" # Add your key in the Render UI
+      - key: PERPLEXITY_API_KEY
+        value: "" # Add your key in the Render UI
+      - key: PYTHON_VERSION
+        value: 3.11.0 # Specify a Python version 
