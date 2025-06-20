@@ -15,10 +15,10 @@ import uuid
 from datetime import datetime
 
 # Import our TIC research system
-from tic_research import TICResearchWorkflow
-from config import TOOLS, API_CONFIG
-from utils import print_separator
-from prompts import (
+from src.tic_research import TICResearchWorkflow
+from src.config import TOOLS, API_CONFIG
+from src.utils import print_separator
+from src.prompts import (
     ROUTER_SYSTEM_PROMPT,
     QUERY_GENERATION_PROMPT,
     QUERY_MAPPING_PROMPT,
@@ -245,7 +245,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         all_websites = [site["domain"] for site in self.dynamic_websites]
         
         # Create mapping prompt using imported prompt
-        from prompts import QUERY_MAPPING_PROMPT
+        from src.prompts import QUERY_MAPPING_PROMPT
         
         mapping_prompt = QUERY_MAPPING_PROMPT.format(
             available_websites="\n".join([f"- {site['domain']} ({site['name']})" for site in self.dynamic_websites]),
