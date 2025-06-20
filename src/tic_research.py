@@ -11,10 +11,10 @@ import time
 import re
 from datetime import datetime
 from openai import OpenAI
-from config import TOOLS, API_CONFIG
-from utils import load_environment, check_environment, print_separator
-from api_services import get_perplexity_service
-from prompts import (
+from src.config import TOOLS, API_CONFIG
+from src.utils import load_environment, check_environment, print_separator
+from src.api_services import get_perplexity_service
+from src.prompts import (
     ROUTER_SYSTEM_PROMPT,
     QUERY_GENERATION_PROMPT,
     QUERY_MAPPING_PROMPT,
@@ -181,62 +181,15 @@ class TICResearchWorkflow:
         """Map generated queries to relevant TIC websites using OpenAI"""
         print_separator("🗺️  MAPPING QUERIES TO WEBSITES")
         
-        from tic_industry_websites import TIC_INDUSTRY_WEBSITES
+        # This method is overridden in DynamicTICResearchWorkflow
+        # For the base class, we'll return a simple mapping
+        mappings = [
+            {"query": query, "websites": []}
+            for query in generated_queries
+        ]
         
-        # Get all website domains
-        all_websites = [site["domain"] for site in TIC_INDUSTRY_WEBSITES]
-        
-        # Create mapping prompt using imported prompt
-        mapping_prompt = QUERY_MAPPING_PROMPT.format(
-            available_websites="\n".join([f"- {site['domain']} ({site['name']})" for site in TIC_INDUSTRY_WEBSITES]),
-            queries="\n".join([f"{i+1}. {query}" for i, query in enumerate(generated_queries)])
-        )
-        
-        try:
-            response = self.client.chat.completions.create(
-                model=API_CONFIG["openai"]["model"],
-                messages=[{"role": "user", "content": mapping_prompt}],
-                temperature=0.1
-            )
-            
-            # Parse the response to extract JSON
-            response_text = response.choices[0].message.content.strip()
-            
-            # Try to extract JSON from the response
-            try:
-                # Look for JSON array in the response
-                start_idx = response_text.find('[')
-                end_idx = response_text.rfind(']') + 1
-                if start_idx != -1 and end_idx != 0:
-                    json_str = response_text[start_idx:end_idx]
-                    mappings = json.loads(json_str)
-                else:
-                    raise ValueError("No JSON array found in response")
-                    
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"❌ Error parsing mapping response: {e}")
-                print(f"Response: {response_text}")
-                # Fallback: map all queries to all websites
-                mappings = [
-                    {"query": query, "websites": all_websites}
-                    for query in generated_queries
-                ]
-            
-            print(f"✅ Mapped {len(mappings)} queries to websites:")
-            for mapping in mappings:
-                print(f"  Query: {mapping['query'][:50]}...")
-                print(f"  Websites: {len(mapping['websites'])} sites")
-            
-            return mappings
-            
-        except Exception as e:
-            print(f"❌ Error in query mapping: {e}")
-            # Fallback: map all queries to all websites
-            mappings = [
-                {"query": query, "websites": all_websites}
-                for query in generated_queries
-            ]
-            return mappings
+        print(f"✅ Mapped {len(mappings)} queries (base implementation)")
+        return mappings
 
     async def execute_provide_list_workflow(self, research_question, queries):
         """Execute Provide_a_List workflow - comprehensive research approach"""

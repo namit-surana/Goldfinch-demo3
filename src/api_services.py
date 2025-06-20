@@ -1,5 +1,5 @@
 import os
-from config import API_CONFIG
+from src.config import API_CONFIG
 
 class PerplexityService:
     """Service class for Perplexity AI API calls"""
