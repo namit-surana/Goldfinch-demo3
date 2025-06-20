@@ -1,0 +1,16 @@
+# Environment variables
+.env
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE configuration files
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db 

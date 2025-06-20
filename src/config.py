@@ -6,14 +6,14 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "Provide_a_List",
-            "description": "Break down a research question into focused search queries for comprehensive web research. Use this when you need to analyze multiple aspects of a complex research question.",
+            "description": "Return only the full list of certifications / approvals needed for the product and market described in `query`.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "queries": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Array of focused search queries targeting different aspects of the research question"
+                        "description": "One **concise yet complete** English sentence that faithfully restates the user’s request: include product type, key technical specs (voltage, materials, dimensions, etc.), country of origin, and destination market. Use *only* information explicitly provided by the user—do **NOT** invent or guess missing details."
                     }
                 },
                 "required": ["queries"],
@@ -24,8 +24,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "TIC_Specific_Questions",
-            "description": "Direct search for TIC-specific information using web search and domain-filtered search. Use this for straightforward questions that need direct answers from specific domains.",
+            "name": "Search_the_Internet",
+            "description": "Perform a live web search and return up-to-date results (title, snippet, URL).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -36,7 +36,7 @@ TOOLS = [
                     "target_domains": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Array of specific domains to search within"
+                        "description": "One clear English sentence that *describes exactly what information needs to be found* Include every critical fact given by the user—do **NOT** invent or omit details."
                     }
                 },
                 "required": ["user_question", "target_domains"],

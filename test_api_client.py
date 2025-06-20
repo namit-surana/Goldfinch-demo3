@@ -77,23 +77,11 @@ CHAT_HISTORY = [
     }
 ]
 
-def test_health_check():
-    """Test the health check endpoint"""
-    print("🔍 Testing health check...")
-    try:
-        response = requests.get(f"{API_BASE_URL}/health")
-        if response.status_code == 200:
-            print("✅ Health check passed")
-            print(f"   Response: {response.json()}")
-        else:
-            print(f"❌ Health check failed: {response.status_code}")
-    except Exception as e:
-        print(f"❌ Health check error: {e}")
+def run_research(research_question: str) -> Dict[str, Any]:
+    """Runs research and returns the final results directly."""
+    print(f"🚀 Starting research for: \"{research_question}\"")
+    print("...this will take 20-40 seconds...")
 
-def start_research(research_question: str) -> str:
-    """Start a research request and return the request ID"""
-    print(f"🚀 Starting research: {research_question}")
-    
     payload = {
         "research_question": research_question,
         "domain_list_metadata": DOMAIN_METADATA,
@@ -101,66 +89,21 @@ def start_research(research_question: str) -> str:
     }
     
     try:
-        response = requests.post(f"{API_BASE_URL}/research", json=payload)
+        response = requests.post(f"{API_BASE_URL}/research", json=payload, timeout=60) # 60-second timeout
+        
         if response.status_code == 200:
-            result = response.json()
-            request_id = result["request_id"]
-            print(f"✅ Research started successfully")
-            print(f"   Request ID: {request_id}")
-            print(f"   Status: {result['status']}")
-            return request_id
+            print("✅ Research completed successfully!")
+            return response.json()
         else:
-            print(f"❌ Failed to start research: {response.status_code}")
+            print(f"❌ Research failed with status code: {response.status_code}")
             print(f"   Error: {response.text}")
             return None
-    except Exception as e:
-        print(f"❌ Error starting research: {e}")
+    except requests.exceptions.Timeout:
+        print("❌ Request timed out after 60 seconds. The server is likely still working.")
         return None
-
-def check_status(request_id: str) -> Dict[str, Any]:
-    """Check the status of a research request"""
-    try:
-        response = requests.get(f"{API_BASE_URL}/research/{request_id}/status")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"❌ Failed to get status: {response.status_code}")
-            return None
     except Exception as e:
-        print(f"❌ Error checking status: {e}")
+        print(f"❌ An error occurred: {e}")
         return None
-
-def get_results(request_id: str) -> Dict[str, Any]:
-    """Get the results of a completed research request"""
-    try:
-        response = requests.get(f"{API_BASE_URL}/research/{request_id}")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"❌ Failed to get results: {response.status_code}")
-            return None
-    except Exception as e:
-        print(f"❌ Error getting results: {e}")
-        return None
-
-def wait_for_completion(request_id: str, max_wait_time: int = 300) -> Dict[str, Any]:
-    """Wait for research to complete and return results"""
-    print(f"⏳ Waiting for research to complete...")
-    start_time = time.time()
-    
-    while time.time() - start_time < max_wait_time:
-        status = check_status(request_id)
-        if status:
-            print(f"   Status: {status['status']} - {status['message']}")
-            
-            if status['status'] in ['completed', 'failed', 'error']:
-                print(f"✅ Research finished with status: {status['status']}")
-                return get_results(request_id)
-        
-        time.sleep(5)  # Wait 5 seconds before checking again
-    
-    print(f"⏰ Timeout waiting for research completion")
-    return None
 
 def display_results(results: Dict[str, Any]):
     """Print research results in a formatted way"""
@@ -205,46 +148,20 @@ def display_results(results: Dict[str, Any]):
     print("\n" + "="*50)
 
 def main():
-    """Main test function"""
+    """Main function to run API tests"""
     print("🧪 TIC Research API Test Client")
-    print("="*50)
     
-    # Test health check
-    test_health_check()
-    print()
-    
-    # Test 1: Comprehensive research question
-    print("==================== Test 1 ====================")
-    question1 = "What certifications are required to export electronics to the US?"
-    print(f"Question: {question1}")
-    
-    request_id1 = start_research(question1)
-    if request_id1:
-        results1 = wait_for_completion(request_id1)
-        if results1:
-            display_results(results1)
-    
-    # Test 2: Specific question
+    # Test 1
+    print("\n==================== Test 1 ====================")
+    results1 = run_research("What certifications are required to export electronics to the US?")
+    if results1:
+        display_results(results1)
+        
+    # Test 2
     print("\n==================== Test 2 ====================")
-    question2 = "What safety standards apply to consumer products in the EU?"
-    print(f"Question: {question2}")
-    
-    request_id2 = start_research(question2)
-    if request_id2:
-        results2 = wait_for_completion(request_id2)
-        if results2:
-            display_results(results2)
-    
-    # Test 3: UL certification question
-    print("\n==================== Test 3 ====================")
-    question3 = "How do I get UL certification for my product?"
-    print(f"Question: {question3}")
-    
-    request_id3 = start_research(question3)
-    if request_id3:
-        results3 = wait_for_completion(request_id3)
-        if results3:
-            display_results(results3)
+    results2 = run_research("What safety standards apply to consumer products in the EU?")
+    if results2:
+        display_results(results2)
 
 if __name__ == "__main__":
     main() 

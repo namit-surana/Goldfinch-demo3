@@ -160,7 +160,7 @@ class TICResearchWorkflow:
                 
                 if function_name == "Provide_a_List":
                     return await self.execute_provide_list_workflow(research_question, args["queries"])
-                elif function_name == "TIC_Specific_Questions":
+                elif function_name == "Search_the_Internet":
                     return await self.execute_tic_specific_questions_workflow(args["user_question"], args["target_domains"])
                 else:
                     print(f"❌ Unknown tool selected: {function_name}. Stopping.")

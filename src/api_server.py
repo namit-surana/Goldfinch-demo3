@@ -11,8 +11,8 @@ from typing import List, Dict, Any, Optional
 import asyncio
 import json
 import time
-from datetime import datetime
 import uuid
+from datetime import datetime
 
 # Import our TIC research system
 from tic_research import TICResearchWorkflow
@@ -31,7 +31,7 @@ from prompts import (
 # Initialize FastAPI app
 app = FastAPI(
     title="TIC Research API",
-    description="API for Testing, Inspection, and Certification (TIC) industry research",
+    description="An API for conducting Testing, Inspection, and Certification (TIC) research.",
     version="1.0.0"
 )
 
@@ -91,10 +91,6 @@ class StatusResponse(BaseModel):
     status: str
     message: str
     progress: Optional[float] = None
-
-# Global storage for research results and status
-research_results = {}
-research_status = {}
 
 class DynamicTICResearchWorkflow(TICResearchWorkflow):
     """Extended TIC research workflow that can use dynamic domain metadata"""
@@ -195,16 +191,35 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             
             # Try to extract JSON from the response
             try:
-                # Look for JSON array in the response
-                start_idx = response_text.find('[')
-                end_idx = response_text.rfind(']') + 1
-                if start_idx != -1 and end_idx != 0:
-                    json_str = response_text[start_idx:end_idx]
-                    queries = json.loads(json_str)
-                else:
-                    # Fallback: split by newlines and clean up
-                    queries = [line.strip().strip('"').strip("'") for line in response_text.split('\n') if line.strip()]
+                # Look for the start of a JSON array or object
+                json_start = -1
+                if '[' in response_text:
+                    json_start = response_text.find('[')
+                elif '{' in response_text:
+                    json_start = response_text.find('{')
+
+                if json_start != -1:
+                    # Find the corresponding closing bracket/brace
+                    if response_text[json_start] == '[':
+                        json_end = response_text.rfind(']') + 1
+                    else:
+                        json_end = response_text.rfind('}') + 1
                     
+                    json_str = response_text[json_start:json_end]
+                    parsed_json = json.loads(json_str)
+                    
+                    if isinstance(parsed_json, list):
+                        queries = parsed_json
+                    elif isinstance(parsed_json, dict):
+                        # If it's a dict, extract the values
+                        queries = list(parsed_json.values())
+                    else:
+                        # Fallback for unexpected JSON types
+                        queries = [research_question]
+                else:
+                    # Fallback if no JSON is found
+                    queries = [line.strip().strip('"').strip("'") for line in response_text.split('\n') if line.strip()]
+
             except (json.JSONDecodeError, ValueError) as e:
                 print(f"❌ Error parsing query response: {e}")
                 print(f"Response: {response_text}")
@@ -331,7 +346,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 processed_results.append({
                     "query": task["query"],
                     "result": result["content"],
-                    "citations": result["citations"],
+                    "citations": result.get("citations", []),
                     "extracted_links": self.extract_links_from_content(result["content"]),
                     "status": "success",
                     "search_type": task["type"],
@@ -348,25 +363,29 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                     "websites": task["websites"]
                 })
         
-        # Compile results
+        total_time = time.time() - workflow_start
+        
+        # Compile final results object matching the response model
         result_data = {
+            "request_id": str(uuid.uuid4()),
+            "status": "completed",
+            "message": "Research completed successfully.",
             "research_question": research_question,
-            "industry_focus": "TIC (Testing, Inspection, Certification)",
             "workflow_type": "provide_list_workflow",
             "query_mappings": query_mappings,
             "execution_summary": {
-                "total_time_seconds": time.time() - workflow_start,
-                "workflow_type": "provide_list_workflow",
+                "total_time_seconds": total_time,
                 "total_searches": len(search_tasks),
                 "general_searches": len([t for t in search_tasks if t["type"] == "general_web"]),
                 "domain_searches": len([t for t in search_tasks if t["type"] == "domain_filtered"])
             },
             "search_results": processed_results,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "processing_time": total_time
         }
         
         print_separator("📋 PROVIDE LIST WORKFLOW COMPLETE")
-        print(f"⏱️  Total Time: {time.time() - workflow_start:.2f} seconds")
+        print(f"⏱️  Total Time: {total_time:.2f} seconds")
         print(f"📊 Total Searches: {len(search_tasks)}")
         print(f"🌐 General Web Searches: {len([t for t in search_tasks if t['type'] == 'general_web'])}")
         print(f"🏢 Domain-Filtered Searches: {len([t for t in search_tasks if t['type'] == 'domain_filtered'])}")
@@ -419,7 +438,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 processed_results.append({
                     "query": task["query"],
                     "result": result["content"],
-                    "citations": result["citations"],
+                    "citations": result.get("citations", []),
                     "extracted_links": self.extract_links_from_content(result["content"]),
                     "status": "success",
                     "search_type": task["type"],
@@ -436,25 +455,29 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                     "websites": task["websites"]
                 })
         
-        # Compile results
+        total_time = time.time() - workflow_start
+
+        # Compile final results object matching the response model
         result_data = {
+            "request_id": str(uuid.uuid4()),
+            "status": "completed",
+            "message": "Research completed successfully.",
             "research_question": research_question,
-            "industry_focus": "TIC (Testing, Inspection, Certification)",
             "workflow_type": "tic_specific_questions",
             "query_mappings": query_mappings,
             "execution_summary": {
-                "total_time_seconds": time.time() - workflow_start,
-                "workflow_type": "tic_specific_questions",
+                "total_time_seconds": total_time,
                 "total_searches": len(search_tasks),
                 "general_searches": len([t for t in search_tasks if t["type"] == "general_web"]),
                 "domain_searches": len([t for t in search_tasks if t["type"] == "domain_filtered"])
             },
             "search_results": processed_results,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "processing_time": total_time
         }
         
         print_separator("🎯 TIC SPECIFIC QUESTIONS WORKFLOW COMPLETE")
-        print(f"⏱️  Total Time: {time.time() - workflow_start:.2f} seconds")
+        print(f"⏱️  Total Time: {total_time:.2f} seconds")
         print(f"📊 Total Searches: {len(search_tasks)}")
         print(f"🌐 General Web Searches: {len([t for t in search_tasks if t['type'] == 'general_web'])}")
         print(f"🏢 Domain-Filtered Searches: {len([t for t in search_tasks if t['type'] == 'domain_filtered'])}")
@@ -472,7 +495,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 queries = await self.generate_research_queries(research_question)
                 return await self.execute_provide_list_workflow(research_question, queries)
                 
-            elif router_decision == "TIC_Specific_Questions":
+            elif router_decision == "Search_the_Internet":
                 # Direct search approach
                 return await self.execute_tic_specific_questions_workflow(research_question)
                 
@@ -484,139 +507,34 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             print(f"❌ Error in route_research_request: {str(e)}")
             return None
 
-async def process_research_request(request_id: str, request: ResearchRequest):
-    """Background task to process research request"""
+@app.post("/research", response_model=ResearchResultResponse)
+async def start_research(request: ResearchRequest):
+    """
+    Start a new research request and get the results directly.
+    This is a synchronous endpoint and may take a while to respond.
+    """
     try:
-        # Update status to processing
-        research_status[request_id] = {
-            "status": "processing",
-            "message": "Starting research process...",
-            "progress": 0.0
-        }
-        
         # Initialize dynamic workflow with provided domain metadata
         workflow = DynamicTICResearchWorkflow(request.domain_list_metadata)
         
-        # Update status
-        research_status[request_id]["message"] = "Router analyzing question..."
-        research_status[request_id]["progress"] = 0.1
-        
-        # Process the research request
-        start_time = time.time()
-        result = await workflow.route_research_request(
-            request.research_question
-        )
-        processing_time = time.time() - start_time
+        # Process the research request and wait for the result
+        result = await workflow.route_research_request(request.research_question)
         
         if result is None:
-            # Research failed
-            research_results[request_id] = {
-                "request_id": request_id,
-                "status": "failed",
-                "message": "Research failed - router timeout, no tool selected, or unknown tool",
-                "research_question": request.research_question,
-                "timestamp": datetime.now().isoformat(),
-                "processing_time": processing_time
-            }
-            research_status[request_id] = {
-                "status": "failed",
-                "message": "Research failed - router timeout, no tool selected, or unknown tool",
-                "progress": 1.0
-            }
-        else:
-            # Research successful - result is already the complete data
-            research_results[request_id] = {
-                "request_id": request_id,
-                "status": "completed",
-                "message": "Research completed successfully",
-                "research_question": request.research_question,
-                "workflow_type": result.get("workflow_type"),
-                "execution_summary": result.get("execution_summary"),
-                "search_results": result.get("search_results"),
-                "query_mappings": result.get("query_mappings"),
-                "timestamp": datetime.now().isoformat(),
-                "processing_time": processing_time
-            }
-            research_status[request_id] = {
-                "status": "completed",
-                "message": "Research completed successfully",
-                "progress": 1.0
-            }
-            
+            raise HTTPException(
+                status_code=500,
+                detail="Research failed - router timeout, no tool selected, or unknown tool"
+            )
+        
+        return ResearchResultResponse(**result)
+
     except Exception as e:
-        # Handle any errors
-        research_results[request_id] = {
-            "request_id": request_id,
-            "status": "error",
-            "message": f"Research error: {str(e)}",
-            "research_question": request.research_question,
-            "timestamp": datetime.now().isoformat()
-        }
-        research_status[request_id] = {
-            "status": "error",
-            "message": f"Research error: {str(e)}",
-            "progress": 1.0
-        }
-
-@app.post("/research", response_model=ResearchStartResponse)
-async def start_research(request: ResearchRequest, background_tasks: BackgroundTasks):
-    """Start a new research request"""
-    try:
-        # Generate unique request ID
-        request_id = str(uuid.uuid4())
-        
-        # Validate input
-        if not request.research_question.strip():
-            raise HTTPException(status_code=400, detail="Research question cannot be empty")
-        
-        if not request.domain_list_metadata:
-            raise HTTPException(status_code=400, detail="Domain list metadata cannot be empty")
-        
-        # Initialize status
-        research_status[request_id] = {
-            "status": "queued",
-            "message": "Research request queued",
-            "progress": 0.0
-        }
-        
-        # Start background processing
-        background_tasks.add_task(process_research_request, request_id, request)
-        
-        return ResearchStartResponse(
-            request_id=request_id,
-            status="queued",
-            message="Research request started successfully",
-            research_question=request.research_question,
-            timestamp=datetime.now().isoformat()
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start research: {str(e)}")
-
-@app.get("/research/{request_id}", response_model=ResearchResultResponse)
-async def get_research_result(request_id: str):
-    """Get research results by request ID"""
-    if request_id not in research_results:
-        raise HTTPException(status_code=404, detail="Research request not found")
-    
-    result = research_results[request_id]
-    return ResearchResultResponse(**result)
-
-@app.get("/research/{request_id}/status", response_model=StatusResponse)
-async def get_research_status(request_id: str):
-    """Get research status by request ID"""
-    if request_id not in research_status:
-        raise HTTPException(status_code=404, detail="Research request not found")
-    
-    status = research_status[request_id]
-    return StatusResponse(
-        request_id=request_id,
-        **status
-    )
+        print(f"❌ Unhandled error in /research endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint to confirm the API is running"""
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
@@ -629,12 +547,7 @@ async def root():
     return {
         "message": "TIC Research API",
         "version": "1.0.0",
-        "endpoints": {
-            "POST /research": "Start a new research request",
-            "GET /research/{request_id}": "Get research results",
-            "GET /research/{request_id}/status": "Get research status",
-            "GET /health": "Health check"
-        }
+        "docs": "/docs"
     }
 
 if __name__ == "__main__":

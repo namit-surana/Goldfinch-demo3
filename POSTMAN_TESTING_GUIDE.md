@@ -196,7 +196,7 @@
 **Expected Workflow:** `provide_list_workflow`
 **Expected Searches:** 12+ (6 general + 6 domain-filtered)
 
-### Scenario 2: Specific Question (TIC_Specific_Questions)
+### Scenario 2: Specific Question (Search_the_Internet)
 **Question:** "How do I get UL certification for my product?"
 
 **Expected Workflow:** `tic_specific_questions`
