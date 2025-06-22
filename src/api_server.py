@@ -122,18 +122,33 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         # Don't save to file, just return the data
         return result_data
     
-    async def get_router_decision(self, research_question):
+    async def get_router_decision(self, research_question, chat_history=None):
         """Get router decision for which workflow to use"""
         print_separator("🔀 RESEARCH ROUTER")
         
         # Use imported system prompt
         system_prompt = ROUTER_SYSTEM_PROMPT
         
-        user_prompt = f"""
-        Research Question: {research_question}
-        
-        Decide which research approach to use.
-        """
+        # Build user prompt with chat history context
+        if chat_history and len(chat_history) > 0:
+            # Format chat history for context
+            chat_context = "\n".join([
+                f"{msg.role}: {msg.content}" for msg in chat_history[-5:]  # Last 5 messages for context
+            ])
+            user_prompt = f"""
+            Chat History Context:
+            {chat_context}
+            
+            Current Research Question: {research_question}
+            
+            Decide which research approach to use based on the current question and chat history context.
+            """
+        else:
+            user_prompt = f"""
+            Research Question: {research_question}
+            
+            Decide which research approach to use.
+            """
         
         try:
             # Add timeout for router decision (15 seconds)
@@ -158,6 +173,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             
             if response.choices[0].message.tool_calls:
                 tool_call = response.choices[0].message.tool_calls[0]
+                print(response.choices[0].message.tool_calls[0])
                 function_name = tool_call.function.name
                 
                 print(f"🤖 Router decided to use: {function_name} (took {router_time:.2f}s)")
@@ -176,14 +192,63 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             print("🛑 Stopping due to router error.")
             return None
     
-    async def generate_research_queries(self, research_question):
+    async def generate_enhanced_search_query(self, research_question, chat_history=None):
+        """Generate an enhanced search query that combines chat history with current question"""
+        if not chat_history or len(chat_history) == 0:
+            return research_question
+        
+        try:
+            # Create a prompt to generate an enhanced search query
+            chat_context = "\n".join([
+                f"{msg.role}: {msg.content}" for msg in chat_history[-5:]  # Last 5 messages
+            ])
+            
+            enhancement_prompt = f"""
+            Based on the following chat history and current research question, generate an enhanced search query that incorporates relevant context from the conversation.
+
+            Chat History:
+            {chat_context}
+
+            Current Research Question: {research_question}
+
+            Generate a comprehensive search query that:
+            1. Includes the current research question
+            2. Incorporates relevant context from the chat history
+            3. Is optimized for web search
+            4. Maintains focus on the current question while adding context
+
+            Enhanced Search Query:
+            """
+            
+            response = self.client.chat.completions.create(
+                model=API_CONFIG["openai"]["model"],
+                messages=[
+                    {"role": "system", "content": "You are a search query optimization expert. Generate concise, focused search queries that combine current questions with relevant chat history context."},
+                    {"role": "user", "content": enhancement_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=200
+            )
+            
+            enhanced_query = response.choices[0].message.content.strip()
+            print(f"🔍 Enhanced search query: {enhanced_query}")
+            return enhanced_query
+            
+        except Exception as e:
+            print(f"❌ Error generating enhanced search query: {e}")
+            return research_question
+
+    async def generate_research_queries(self, research_question, chat_history=None):
         """Generate multiple research queries for comprehensive analysis"""
         try:
+            # First, generate an enhanced query that includes chat history context
+            enhanced_query = await self.generate_enhanced_search_query(research_question, chat_history)
+            
             response = self.client.chat.completions.create(
                 model=API_CONFIG["openai"]["model"],
                 messages=[
                     {"role": "system", "content": QUERY_GENERATION_PROMPT},
-                    {"role": "user", "content": f"Research Question: {research_question}"}
+                    {"role": "user", "content": f"Research Question: {enhanced_query}"}
                 ],
                 temperature=0.7
             )
@@ -300,18 +365,18 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             ]
             return mappings
 
-    async def execute_provide_list_workflow(self, research_question, queries):
+    async def execute_provide_list_workflow(self, research_question, queries, chat_history=None):
         """Execute Provide_a_List workflow - comprehensive research approach"""
         print_separator("📋 EXECUTING PROVIDE LIST WORKFLOW")
         workflow_start = time.time()
         
-        # Phase 1: Map queries to relevant websites
+        # Phase 1: Map queries to relevant websites (queries already include chat history context)
         query_mappings = await self.Map_Queries_to_Websites(queries)
         
         # Phase 2: Prepare search tasks
         search_tasks = []
         
-        # Add general web searches for all queries
+        # Add general web searches for all queries (already enhanced with chat history)
         for query in queries:
             search_tasks.append({
                 "type": "general_web",
@@ -394,21 +459,24 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         
         return result_data
 
-    async def execute_tic_specific_questions_workflow(self, research_question):
+    async def execute_tic_specific_questions_workflow(self, research_question, chat_history=None):
         """Execute TIC Specific Questions workflow - direct search approach with intelligent mapping"""
         print_separator("🎯 EXECUTING TIC SPECIFIC QUESTIONS WORKFLOW")
         workflow_start = time.time()
         
-        # Phase 1: Map single user question to relevant websites
-        query_mappings = await self.Map_Queries_to_Websites([research_question])
+        # Generate enhanced search query that includes chat history context
+        enhanced_query = await self.generate_enhanced_search_query(research_question, chat_history)
+        
+        # Phase 1: Map enhanced query to relevant websites
+        query_mappings = await self.Map_Queries_to_Websites([enhanced_query])
         
         # Phase 2: Prepare search tasks
         search_tasks = []
         
-        # Add general web search for the question
+        # Add general web search for the enhanced query
         search_tasks.append({
             "type": "general_web",
-            "query": research_question,
+            "query": enhanced_query,
             "websites": []
         })
         
@@ -416,7 +484,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         if query_mappings and query_mappings[0]["websites"]:
             search_tasks.append({
                 "type": "domain_filtered",
-                "query": research_question,
+                "query": enhanced_query,
                 "websites": query_mappings[0]["websites"]  # All mapped websites for this query
             })
         
@@ -486,20 +554,20 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         
         return result_data
 
-    async def route_research_request(self, research_question):
+    async def route_research_request(self, research_question, chat_history=None):
         """Route research request to appropriate workflow based on router decision"""
         try:
-            # Get router decision
-            router_decision = await self.get_router_decision(research_question)
+            # Get router decision with chat history context
+            router_decision = await self.get_router_decision(research_question, chat_history)
             
             if router_decision == "Provide_a_List":
                 # Generate multiple queries for comprehensive research
-                queries = await self.generate_research_queries(research_question)
-                return await self.execute_provide_list_workflow(research_question, queries)
+                queries = await self.generate_research_queries(research_question, chat_history)
+                return await self.execute_provide_list_workflow(research_question, queries, chat_history)
                 
             elif router_decision == "Search_the_Internet":
-                # Direct search approach
-                return await self.execute_tic_specific_questions_workflow(research_question)
+                # Direct search approach with enhanced query
+                return await self.execute_tic_specific_questions_workflow(research_question, chat_history)
                 
             elif isinstance(router_decision, dict) and router_decision.get("type") == "direct_response":
                 # Handle direct LLM response (no tool selected)
@@ -551,7 +619,7 @@ async def start_research(request: ResearchRequest):
         workflow = DynamicTICResearchWorkflow(request.domain_list_metadata)
         
         # Process the research request and wait for the result
-        result = await workflow.route_research_request(request.research_question)
+        result = await workflow.route_research_request(request.research_question, request.chat_history)
         
         if result is None:
             raise HTTPException(
