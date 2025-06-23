@@ -4,7 +4,7 @@ TIC Research API Server
 FastAPI-based API for TIC industry research with dynamic domain configuration
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
@@ -28,6 +28,30 @@ from src.prompts import (
     PERPLEXITY_TIC_GENERAL_PROMPT,
     PERPLEXITY_TIC_DOMAIN_PROMPT
 )
+
+# Pydantic models for structured output parsing
+class QueryMapping(BaseModel):
+    query: str
+    websites: List[str]
+
+class ResearchQueries(BaseModel):
+    queries: List[str]
+
+class QueryMappings(BaseModel):
+    mappings: List[QueryMapping]
+
+# Pydantic models for Perplexity structured output
+class Certification(BaseModel):
+    certificate_name: str
+    certificate_description: str
+    legal_regulation: str
+    legal_text_excerpt: str
+    legal_text_meaning: str
+    registration_fee: str
+    is_required: bool
+
+class Certifications(BaseModel):
+    certifications: List[Certification]
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -66,14 +90,6 @@ class ResearchRequest(BaseModel):
     domain_list_metadata: List[DomainMetadata] = Field(..., description="List of domain metadata for TIC websites")
     chat_history: List[ChatMessage] = Field(default=[], description="Previous chat messages for context")
 
-class ResearchStartResponse(BaseModel):
-    """Response model for when research is successfully queued"""
-    request_id: str
-    status: str
-    message: str
-    research_question: str
-    timestamp: str
-
 class ResearchResultResponse(BaseModel):
     """Response model for the final research results"""
     request_id: str
@@ -86,12 +102,6 @@ class ResearchResultResponse(BaseModel):
     query_mappings: Optional[List[Dict[str, Any]]] = None
     timestamp: str
     processing_time: Optional[float] = None
-
-class StatusResponse(BaseModel):
-    request_id: str
-    status: str
-    message: str
-    progress: Optional[float] = None
 
 class DynamicTICResearchWorkflow(TICResearchWorkflow):
     """Extended TIC research workflow that can use dynamic domain metadata"""
@@ -117,11 +127,6 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 "boost_keywords": domain.boost_keywords
             })
         return websites
-    
-    def save_tic_results(self, result_data):
-        """Override to not save files - just return the data"""
-        # Don't save to file, just return the data
-        return result_data
     
     async def get_router_decision(self, research_question, chat_history=None):
         """Get router decision for which workflow to use"""
@@ -209,112 +214,45 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": f"Research Question: {router_query}"}
                 ],
-                temperature=0.7
+                text_format=ResearchQueries
             )
-            
-            # Parse the response to extract queries
-            response_text = response.choices[0].message.content.strip()
-            
-            # Try to extract JSON from the response
-            try:
-                # Look for the start of a JSON array or object
-                json_start = -1
-                if '[' in response_text:
-                    json_start = response_text.find('[')
-                elif '{' in response_text:
-                    json_start = response_text.find('{')
-
-                if json_start != -1:
-                    # Find the corresponding closing bracket/brace
-                    if response_text[json_start] == '[':
-                        json_end = response_text.rfind(']') + 1
-                    else:
-                        json_end = response_text.rfind('}') + 1
-                    
-                    json_str = response_text[json_start:json_end]
-                    parsed_json = json.loads(json_str)
-                    
-                    if isinstance(parsed_json, list):
-                        queries = parsed_json
-                    elif isinstance(parsed_json, dict):
-                        # If it's a dict, extract the values
-                        queries = list(parsed_json.values())
-                    else:
-                        # Fallback for unexpected JSON types
-                        queries = [router_query]
-                else:
-                    # Fallback if no JSON is found
-                    queries = [line.strip().strip('"').strip("'") for line in response_text.split('\n') if line.strip()]
-
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"❌ Error parsing query response: {e}")
-                print(f"Response: {response_text}")
-                # Fallback: use the original question
-                queries = [router_query]
-            
+            queries = response.output_parsed.queries
             print(f"✅ Generated {len(queries)} research queries:")
             for i, query in enumerate(queries, 1):
                 print(f"  {i}. {query}")
-            
             return queries
-            
         except Exception as e:
             print(f"❌ Error generating queries: {e}")
             # Fallback: use the original question
             return [router_query]
     
     async def Map_Queries_to_Websites(self, generated_queries):
-        """Override the mapping function to use dynamic websites"""
+        """Override the mapping function to use dynamic websites (structured output)"""
         print_separator("🗺️  MAPPING QUERIES TO WEBSITES")
-        
-        # Use dynamic websites instead of imported ones
         all_websites = [site["domain"] for site in self.dynamic_websites]
-        
-        # Create mapping prompt using imported prompt
         from src.prompts import QUERY_MAPPING_PROMPT
-        
         mapping_prompt = QUERY_MAPPING_PROMPT.format(
             available_websites="\n".join([f"- {site['domain']} ({site['name']})" for site in self.dynamic_websites]),
             queries="\n".join([f"{i+1}. {query}" for i, query in enumerate(generated_queries)])
         )
-        
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.responses.parse(
                 model=API_CONFIG["openai"]["model"],
-                messages=[{"role": "user", "content": mapping_prompt}],
-                temperature=0.1
+                input=[
+                    {"role": "system", "content": QUERY_MAPPING_PROMPT},
+                    {"role": "user", "content": mapping_prompt}
+                ],
+                text_format=QueryMappings
             )
-            
-            # Parse the response to extract JSON
-            response_text = response.choices[0].message.content.strip()
-            
-            # Try to extract JSON from the response
-            try:
-                # Look for JSON array in the response
-                start_idx = response_text.find('[')
-                end_idx = response_text.rfind(']') + 1
-                if start_idx != -1 and end_idx != 0:
-                    json_str = response_text[start_idx:end_idx]
-                    mappings = json.loads(json_str)
-                else:
-                    raise ValueError("No JSON array found in response")
-                    
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"❌ Error parsing mapping response: {e}")
-                print(f"Response: {response_text}")
-                # Fallback: map all queries to all websites
-                mappings = [
-                    {"query": query, "websites": all_websites}
-                    for query in generated_queries
-                ]
-            
+            mappings = [
+                {"query": mapping.query, "websites": mapping.websites}
+                for mapping in response.output_parsed.mappings
+            ]
             print(f"✅ Mapped {len(mappings)} queries to websites:")
             for mapping in mappings:
                 print(f"  Query: {mapping['query'][:50]}...")
                 print(f"  Websites: {len(mapping['websites'])} sites")
-            
             return mappings
-            
         except Exception as e:
             print(f"❌ Error in query mapping: {e}")
             # Fallback: map all queries to all websites
@@ -364,9 +302,9 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 GENERAL_PROMPT = PERPLEXITY_TIC_GENERAL_PROMPT
 
             if task["type"] == "general_web":
-                return await self.async_perplexity_search(task["query"], prompt=GENERAL_PROMPT)
+                return await self.async_perplexity_search(task["query"], prompt=PERPLEXITY_LIST_GENERAL_PROMPT, use_structured_output=True)
             else:  # domain_filtered
-                return await self.async_perplexity_search(task["query"], domains=task["websites"], prompt=DOMAIN_PROMPT)
+                return await self.async_perplexity_search(task["query"], domains=task["websites"], prompt=PERPLEXITY_LIST_DOMAIN_PROMPT, use_structured_output=True)
         
         # Execute all searches in parallel
         search_results = await asyncio.gather(*[execute_search_task(task) for task in search_tasks], return_exceptions=True)

@@ -37,8 +37,8 @@ class TICResearchWorkflow:
         self.tools = TOOLS
         self.perplexity_service = get_perplexity_service()
     
-    async def async_perplexity_search(self, query, domains=None, prompt=None):
-        """Async Perplexity search using aiohttp with optional domain filtering and custom prompt"""
+    async def async_perplexity_search(self, query, domains=None, prompt=None, use_structured_output=False):
+        """Async Perplexity search using aiohttp with optional domain filtering, custom prompt, and structured output"""
         headers = {
             "Authorization": f"Bearer {self.perplexity_service.api_key}",
             "Content-Type": "application/json"
@@ -57,6 +57,14 @@ class TICResearchWorkflow:
             "temperature": self.perplexity_service.temperature
         }
         
+        # Add structured output if requested
+        if use_structured_output:
+            from src.api_server import Certifications
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"schema": Certifications.model_json_schema()}
+            }
+        
         # Add domain filter if domains are provided
         if domains:
             body["search_domain_filter"] = domains
@@ -67,13 +75,24 @@ class TICResearchWorkflow:
                 
                 # Extract content and citations from response
                 content = data['choices'][0]['message']['content']
-                citations = data.get('citations', [])  # Perplexity may include citations
+                citations = data.get('citations', [])
                 
-                return {
-                    "content": content,
-                    "citations": citations,
-                    "raw_response": data  # Keep full response for debugging
-                }
+                # If using structured output, parse with Pydantic
+                if use_structured_output:
+                    from src.api_server import Certifications
+                    parsed_data = json.loads(content)
+                    certifications = Certifications(**parsed_data)
+                    structured_content = json.dumps([cert.dict() for cert in certifications.certifications], indent=2)
+                    return {
+                        "content": structured_content,
+                        "citations": citations,
+                        "parsed_certifications": certifications.certifications
+                    }
+                else:
+                    return {
+                        "content": content,
+                        "citations": citations
+                    }
 
     def extract_links_from_content(self, content):
         """Extract URLs from content using regex"""
@@ -81,42 +100,7 @@ class TICResearchWorkflow:
         links = re.findall(url_pattern, content)
         return list(set(links))  # Remove duplicates
     
-    def extract_domain(self, url):
-        """Extract domain from URL"""
-        try:
-            from urllib.parse import urlparse
-            return urlparse(url).netloc
-        except:
-            # Simple fallback if urllib is not available
-            if "://" in url:
-                return url.split("://")[1].split("/")[0]
-            return url.split("/")[0]
-        
-    async def generate_tic_specific_queries(self, research_question):
-        """Generate TIC industry-specific search queries"""
-        print_separator("Generating TIC-Specific Search Queries")
-        
-        # Use imported prompt
-        prompt = QUERY_GENERATION_PROMPT.format(research_question=research_question)
-        
-        response = self.client.chat.completions.create(
-            model=API_CONFIG["openai"]["model"],
-            messages=[{"role": "user", "content": prompt}],
-            tools=[tool for tool in self.tools if tool["function"]["name"] == "Provide_a_List"],
-            tool_choice={"type": "function", "function": {"name": "Provide_a_List"}}
-        )
-        
-        tool_call = response.choices[0].message.tool_calls[0]
-        args = json.loads(tool_call.function.arguments)
-        queries = args["queries"]
-        
-        print(f"✅ Generated {len(queries)} TIC-focused search queries:")
-        for i, query in enumerate(queries, 1):
-            print(f"  {i}. {query}")
-        
-        return queries
-
-    async def route_research_request(self, research_question, target_domains=None):
+    async def route_research_request(self, research_question):
         """Router to decide which research approach to use based on LLM decision"""
         print_separator("🔀 RESEARCH ROUTER")
         
@@ -125,7 +109,6 @@ class TICResearchWorkflow:
         
         user_prompt = f"""
         Research Question: {research_question}
-        Target Domains: {target_domains if target_domains else 'All TIC websites'}
         
         Decide which research approach to use.
         """
@@ -161,7 +144,7 @@ class TICResearchWorkflow:
                 if function_name == "Provide_a_List":
                     return await self.execute_provide_list_workflow(research_question, args["queries"])
                 elif function_name == "Search_the_Internet":
-                    return await self.execute_tic_specific_questions_workflow(args["user_question"], args["target_domains"])
+                    return await self.execute_tic_specific_questions_workflow(args["user_question"])
                 else:
                     print(f"❌ Unknown tool selected: {function_name}. Stopping.")
                     return None
@@ -273,18 +256,15 @@ class TICResearchWorkflow:
             "timestamp": datetime.now().isoformat()
         }
         
-        filename = self.save_tic_results(result_data)
-        
         print_separator("📋 PROVIDE LIST WORKFLOW COMPLETE")
         print(f"⏱️  Total Time: {time.time() - workflow_start:.2f} seconds")
         print(f"📊 Total Searches: {len(search_tasks)}")
         print(f"🌐 General Web Searches: {len([t for t in search_tasks if t['type'] == 'general_web'])}")
         print(f"🏢 Domain-Filtered Searches: {len([t for t in search_tasks if t['type'] == 'domain_filtered'])}")
-        print(f"💾 Results saved to: {filename}")
         
         return result_data
 
-    async def execute_tic_specific_questions_workflow(self, user_question, target_domains):
+    async def execute_tic_specific_questions_workflow(self, user_question):
         """Execute TIC Specific Questions workflow - direct search approach with intelligent mapping"""
         print_separator("🎯 EXECUTING TIC SPECIFIC QUESTIONS WORKFLOW")
         workflow_start = time.time()
@@ -352,7 +332,6 @@ class TICResearchWorkflow:
             "research_question": user_question,
             "industry_focus": "TIC (Testing, Inspection, Certification)",
             "workflow_type": "tic_specific_questions",
-            "target_domains": target_domains,
             "query_mappings": query_mappings,
             "execution_summary": {
                 "total_time_seconds": time.time() - workflow_start,
@@ -365,68 +344,12 @@ class TICResearchWorkflow:
             "timestamp": datetime.now().isoformat()
         }
         
-        filename = self.save_tic_results(result_data)
-        
         print_separator("🎯 TIC SPECIFIC QUESTIONS WORKFLOW COMPLETE")
         print(f"⏱️  Total Time: {time.time() - workflow_start:.2f} seconds")
         print(f"📊 Total Searches: {len(search_tasks)}")
         print(f"🌐 General Web Searches: {len([t for t in search_tasks if t['type'] == 'general_web'])}")
         print(f"🏢 Domain-Filtered Searches: {len([t for t in search_tasks if t['type'] == 'domain_filtered'])}")
-        print(f"💾 Results saved to: {filename}")
         
         return result_data
 
-    def save_tic_results(self, result_data):
-        """Save TIC research results"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_question = "".join(c for c in result_data["research_question"][:50] if c.isalnum() or c in (' ', '_')).rstrip()
-        filename = f"research_results/tic_research_{safe_question}_{timestamp}.json"
-        
-        try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(result_data, f, indent=2, ensure_ascii=False)
-            return filename
-        except Exception as e:
-            print(f"Error saving TIC research results: {e}")
-            return None
-
-async def main():
-    """Main function for TIC industry research"""
-    print_separator("🔬 TIC INDUSTRY RESEARCH SYSTEM")
-    print("Specialized for Testing, Inspection, Certification (Import/Export)")
-    
-    # Get research question
-    research_question = input("\n📝 Enter your TIC research question: ").strip()
-    if not research_question:
-        print("❌ No research question provided")
-        return
-    
-    # Get target domains (optional)
-    target_domains_input = input("\n🎯 Enter target domains (comma-separated, or press Enter for all TIC websites): ").strip()
-    target_domains = None
-    
-    if target_domains_input:
-        target_domains = [domain.strip() for domain in target_domains_input.split(",") if domain.strip()]
-        print(f"✅ Using specified domains: {target_domains}")
-    else:
-        print("✅ Using all TIC websites for comprehensive research")
-    
-    # Run TIC research with router
-    workflow = TICResearchWorkflow()
-    result = await workflow.route_research_request(research_question, target_domains)
-    
-    # Handle router failure cases
-    if result is None:
-        print_separator("🛑 RESEARCH STOPPED")
-        print("❌ Unable to process your request due to:")
-        print("   • Router timeout (>15 seconds)")
-        print("   • No tool selected")
-        print("   • Unknown tool selected")
-        print("   • Router error")
-        print("\n💡 Try rephrasing your question or try again later.")
-        return
-    
-    print_separator("✅ RESEARCH COMPLETED SUCCESSFULLY")
-
-if __name__ == "__main__":
-    asyncio.run(main()) 
+# The main function and command line interface have been removed since we're using the API server 
