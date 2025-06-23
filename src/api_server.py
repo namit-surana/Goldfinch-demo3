@@ -208,9 +208,9 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 SYSTEM_PROMPT = LIST_QUERY_GENERATION_PROMPT
             elif router_decision == "Search_the_Internet":
                 SYSTEM_PROMPT = SEARCH_INTERNET_QUERY_GENERATION_PROMPT
-            response = self.client.chat.completions.create(
+            response = self.client.responses.parse(
                 model=API_CONFIG["openai"]["model"],
-                messages=[
+                input=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": f"Research Question: {router_query}"}
                 ],
