@@ -135,7 +135,6 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         # Build user prompt with chat history context
         full_message = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}]
         full_message.extend(chat_history or [])
-        print(full_message)
         
         try:
             # Add timeout for router decision (15 seconds)
@@ -157,10 +156,9 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             
             if response.choices[0].message.tool_calls:
                 tool_call = response.choices[0].message.tool_calls[0]
-                print(response.choices[0].message.tool_calls[0])
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)["query"]
-                print(f"🤖 Router decided to use: {function_name} with query: {function_args}(took {router_time:.2f}s)")
+                print(f"🤖 Router decided to use: {function_name}\nwith query: {function_args}\n(took {router_time:.2f}s)")
                 return {"type": function_name, "content": function_args}
             else:
                 # No tool selected - return the LLM's direct response
@@ -205,21 +203,37 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
     async def Map_Queries_to_Websites(self, generated_queries):
         """Override the mapping function to use dynamic websites (structured output)"""
         print_separator("🗺️  MAPPING QUERIES TO WEBSITES")
-        all_websites = [site["domain"] for site in self.dynamic_websites]
-        from src.prompts import QUERY_MAPPING_PROMPT
-        mapping_prompt = QUERY_MAPPING_PROMPT.format(
-            available_websites="\n".join([f"- {site['domain']} ({site['name']})" for site in self.dynamic_websites]),
-            queries="\n".join([f"{i+1}. {query}" for i, query in enumerate(generated_queries)])
-        )
+        rich_website_descriptions = [
+    (
+        f"Website: {site['name']}\n"
+        f"- Domain: {site.get('domain', 'N/A')}\n"
+        f"- Region: {site.get('region', 'N/A')}\n"
+        f"- Organization Type: {site.get('org_type', 'N/A')}\n"
+        f"- Aliases: {', '.join(site.get('aliases', [])) or 'None'}\n"
+        f"- Industry Focus: {', '.join(site.get('industry_tags', [])) or 'General'}\n"
+        f"- Semantic Profile: {site.get('semantic_profile', '')}\n"
+        f"- Boost Keywords: {', '.join(site.get('boost_keywords', [])) or 'None'}"
+    ).strip()
+    for site in self.dynamic_websites
+]
+
+        # Use the existing QUERY_MAPPING_PROMPT from prompts.py
+
+        available_websites="\n\n".join(rich_website_descriptions),
+        queries="\n".join([f"{i+1}. {query}" for i, query in enumerate(generated_queries)])
+
+        user_prompt = f"Research Queries: {queries}\nWebsites: {available_websites}\n"
+
         try:
             response = self.client.responses.parse(
                 model=API_CONFIG["openai"]["model"],
                 input=[
                     {"role": "system", "content": QUERY_MAPPING_PROMPT},
-                    {"role": "user", "content": mapping_prompt}
+                    {"role": "user", "content": user_prompt}
                 ],
                 text_format=QueryMappings
             )
+            print("Mapping response:\n", response.output_parsed)
             mappings = [
                 {"query": mapping.query, "websites": mapping.websites}
                 for mapping in response.output_parsed.mappings
@@ -232,6 +246,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         except Exception as e:
             print(f"❌ Error in query mapping: {e}")
             # Fallback: map all queries to all websites
+            all_websites = [site["domain"] for site in self.dynamic_websites]
             mappings = [
                 {"query": query, "websites": all_websites}
                 for query in generated_queries
@@ -273,14 +288,16 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             if router_decision == "Provide_a_List":
                 DOMAIN_PROMPT = PERPLEXITY_LIST_DOMAIN_PROMPT
                 GENERAL_PROMPT = PERPLEXITY_LIST_GENERAL_PROMPT
+                structured_output = True
             elif router_decision == "Search_the_Internet":
                 DOMAIN_PROMPT = PERPLEXITY_TIC_DOMAIN_PROMPT
                 GENERAL_PROMPT = PERPLEXITY_TIC_GENERAL_PROMPT
+                structured_output = False
 
             if task["type"] == "general_web":
-                return await self.async_perplexity_search(task["query"], prompt=PERPLEXITY_LIST_GENERAL_PROMPT, use_structured_output=True)
+                return await self.async_perplexity_search(task["query"], prompt=GENERAL_PROMPT, use_structured_output=structured_output)
             else:  # domain_filtered
-                return await self.async_perplexity_search(task["query"], domains=task["websites"], prompt=PERPLEXITY_LIST_DOMAIN_PROMPT, use_structured_output=True)
+                return await self.async_perplexity_search(task["query"], domains=task["websites"], prompt=DOMAIN_PROMPT, use_structured_output=structured_output)
         
         # Execute all searches in parallel
         search_results = await asyncio.gather(*[execute_search_task(task) for task in search_tasks], return_exceptions=True)
