@@ -1,4 +1,6 @@
-# Simplified Configuration for TIC Research
+"""
+Application settings and configuration
+"""
 
 # Essential tools for OpenAI function calling
 TOOLS = [
@@ -48,5 +50,4 @@ API_CONFIG = {
         "model": "sonar-pro",
         "temperature": 0.1
     }
-}
-
+} 

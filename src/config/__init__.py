@@ -1,0 +1,19 @@
+"""
+Configuration package for the TIC Research API
+"""
+
+from .settings import API_CONFIG, TOOLS
+from .prompts import *
+
+__all__ = [
+    'API_CONFIG',
+    'TOOLS',
+    'ROUTER_SYSTEM_PROMPT',
+    'LIST_QUERY_GENERATION_PROMPT',
+    'SEARCH_INTERNET_QUERY_GENERATION_PROMPT',
+    'QUERY_MAPPING_PROMPT',
+    'PERPLEXITY_LIST_GENERAL_PROMPT',
+    'PERPLEXITY_LIST_DOMAIN_PROMPT',
+    'PERPLEXITY_TIC_GENERAL_PROMPT',
+    'PERPLEXITY_TIC_DOMAIN_PROMPT'
+] 
