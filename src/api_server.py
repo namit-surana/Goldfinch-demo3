@@ -81,14 +81,11 @@ class DomainMetadata(BaseModel):
     semantic_profile: str
     boost_keywords: List[str] = []
 
-class ChatMessage(BaseModel):
-    role: str
-    content: str
 
 class ResearchRequest(BaseModel):
     research_question: str = Field(..., description="The research question to investigate")
     domain_list_metadata: List[DomainMetadata] = Field(..., description="List of domain metadata for TIC websites")
-    chat_history: List[ChatMessage] = Field(default=[], description="Previous chat messages for context")
+    chat_history: List[Dict[str, str]] = Field(default=[], description="Previous chat messages for context")
 
 class ResearchResultResponse(BaseModel):
     """Response model for the final research results"""
@@ -134,29 +131,11 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         print("the current research question: {0}".format(research_question))
         
         # Use imported system prompt
-        system_prompt = ROUTER_SYSTEM_PROMPT
         
         # Build user prompt with chat history context
-        if chat_history and len(chat_history) > 0:
-            # Format chat history for context
-            chat_context = "\n".join([
-                f"{msg.role}: {msg.content}" for msg in chat_history[-7:]  # Last 5 messages for context
-            ])
-            user_prompt = f"""
-            Chat History Context:
-            {chat_context}
-            
-            Current Research Question: {research_question}
-            
-            Decide which research approach to use based on the current question and chat history context.
-            """
-
-        else:
-            user_prompt = f"""
-            Research Question: {research_question}
-            
-            Decide which research approach to use.
-            """
+        full_message = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}]
+        full_message.extend(chat_history or [])
+        print(full_message)
         
         try:
             # Add timeout for router decision (15 seconds)
@@ -166,10 +145,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             async def make_openai_call():
                 return self.client.chat.completions.create(
                     model=API_CONFIG["openai"]["model"],
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
+                    messages=full_message,
                     tools=self.tools,
                     tool_choice="auto"
                 )
