@@ -180,7 +180,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)["query"]
                 print(f"🤖 Router decided to use: {function_name} with query: {function_args}(took {router_time:.2f}s)")
-                return function_name, function_args
+                return {"type": function_name, "content": function_args}
             else:
                 # No tool selected - return the LLM's direct response
                 direct_response = response.choices[0].message.content
@@ -326,7 +326,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
 
     async def execute_workflow(self, router_decision, research_question, queries):
         """Execute Provide_a_List workflow - comprehensive research approach"""
-        print_separator("📋 EXECUTING {router_decision} WORKFLOW")
+        print_separator("📋 EXECUTING {0} WORKFLOW".format(router_decision))
         workflow_start = time.time()
         
         # Phase 1: Map queries to relevant websites (queries already include chat history context)
@@ -430,7 +430,9 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         """Route research request to appropriate workflow based on router decision"""
         try:
             # Get router decision with chat history context
-            router_decision, router_query = await self.get_router_decision(research_question, chat_history)
+            router_answer = await self.get_router_decision(research_question, chat_history)
+            router_decision = router_answer["type"]
+            router_query = router_answer["content"]
             
             if router_decision == "Provide_a_List" or router_decision == "Search_the_Internet":
                 # Generate multiple queries for comprehensive research
@@ -438,9 +440,10 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 return await self.execute_workflow(router_decision, research_question, queries)
                 
                 
-            elif isinstance(router_decision, dict) and router_decision.get("type") == "direct_response":
+            elif router_decision == "direct_response":
                 # Handle direct LLM response (no tool selected)
                 print_separator("💬 DIRECT LLM RESPONSE")
+                print(router_query)
                 workflow_start = time.time()
                 
                 result_data = {
@@ -455,7 +458,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                     },
                     "search_results": [{
                         "query": research_question,
-                        "result": router_decision["content"],
+                        "result": router_query,
                         "citations": [],
                         "extracted_links": [],
                         "status": "success",
