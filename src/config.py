@@ -12,7 +12,7 @@ TOOLS = [
           "properties": {
             "query": {
               "type": "string",
-              "description": "One **concise yet complete** English sentence that faithfully restates the user’s request: include product type, key technical specs (voltage, materials, dimensions, etc.), country of origin, and destination market. Use *only* information explicitly provided by the user—do **NOT** invent or guess missing details."
+              "description": "One **concise yet complete** English sentence that faithfully restates the user's request: include product type, key technical specs (voltage, materials, dimensions, etc.), country of origin, and destination market. Use *only* information explicitly provided by the user—do **NOT** invent or guess missing details."
             }
           },
           "required": ["query"]
@@ -41,7 +41,7 @@ TOOLS = [
 # API Configuration
 API_CONFIG = {
     "openai": {
-        "model": "gpt-4"
+        "model": "gpt-4o-2024-08-06"
     },
     "perplexity": {
         "url": "https://api.perplexity.ai/chat/completions",
