@@ -247,7 +247,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         all_websites = [site["domain"] for site in self.dynamic_websites]
         
         # Create mapping prompt using imported prompt
-        
+        from src.prompts import QUERY_MAPPING_PROMPT
         mapping_prompt = QUERY_MAPPING_PROMPT.format(
             available_websites="\n".join([f"- {site['domain']} ({site['name']})" for site in self.dynamic_websites]),
             queries="\n".join([f"{i+1}. {query}" for i, query in enumerate(generated_queries)])
