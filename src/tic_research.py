@@ -16,7 +16,7 @@ from src.utils import load_environment, check_environment, print_separator
 from src.api_services import get_perplexity_service
 from src.prompts import (
     ROUTER_SYSTEM_PROMPT,
-    QUERY_GENERATION_PROMPT,
+    LIST_QUERY_GENERATION_PROMPT,
     QUERY_MAPPING_PROMPT,
     PERPLEXITY_LIST_GENERAL_PROMPT,
     PERPLEXITY_LIST_DOMAIN_PROMPT,

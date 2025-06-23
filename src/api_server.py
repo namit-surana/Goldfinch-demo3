@@ -20,7 +20,8 @@ from src.config import TOOLS, API_CONFIG
 from src.utils import print_separator
 from src.prompts import (
     ROUTER_SYSTEM_PROMPT,
-    QUERY_GENERATION_PROMPT,
+    LIST_QUERY_GENERATION_PROMPT,
+    SEARCH_INTERNET_QUERY_GENERATION_PROMPT,
     QUERY_MAPPING_PROMPT,
     PERPLEXITY_LIST_GENERAL_PROMPT,
     PERPLEXITY_LIST_DOMAIN_PROMPT,
@@ -125,6 +126,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
     async def get_router_decision(self, research_question, chat_history=None):
         """Get router decision for which workflow to use"""
         print_separator("🔀 RESEARCH ROUTER")
+        print("the current research question: {0}".format(research_question))
         
         # Use imported system prompt
         system_prompt = ROUTER_SYSTEM_PROMPT
@@ -133,7 +135,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         if chat_history and len(chat_history) > 0:
             # Format chat history for context
             chat_context = "\n".join([
-                f"{msg.role}: {msg.content}" for msg in chat_history[-5:]  # Last 5 messages for context
+                f"{msg.role}: {msg.content}" for msg in chat_history[-7:]  # Last 5 messages for context
             ])
             user_prompt = f"""
             Chat History Context:
@@ -143,6 +145,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             
             Decide which research approach to use based on the current question and chat history context.
             """
+
         else:
             user_prompt = f"""
             Research Question: {research_question}
@@ -175,9 +178,9 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 tool_call = response.choices[0].message.tool_calls[0]
                 print(response.choices[0].message.tool_calls[0])
                 function_name = tool_call.function.name
-                
-                print(f"🤖 Router decided to use: {function_name} (took {router_time:.2f}s)")
-                return function_name
+                function_args = json.loads(tool_call.function.arguments)["query"]
+                print(f"🤖 Router decided to use: {function_name} with query: {function_args}(took {router_time:.2f}s)")
+                return function_name, function_args
             else:
                 # No tool selected - return the LLM's direct response
                 direct_response = response.choices[0].message.content
@@ -192,63 +195,19 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             print("🛑 Stopping due to router error.")
             return None
     
-    async def generate_enhanced_search_query(self, research_question, chat_history=None):
-        """Generate an enhanced search query that combines chat history with current question"""
-        if not chat_history or len(chat_history) == 0:
-            return research_question
-        
-        try:
-            # Create a prompt to generate an enhanced search query
-            chat_context = "\n".join([
-                f"{msg.role}: {msg.content}" for msg in chat_history[-5:]  # Last 5 messages
-            ])
-            
-            enhancement_prompt = f"""
-            Based on the following chat history and current research question, generate an enhanced search query that incorporates relevant context from the conversation.
 
-            Chat History:
-            {chat_context}
-
-            Current Research Question: {research_question}
-
-            Generate a comprehensive search query that:
-            1. Includes the current research question
-            2. Incorporates relevant context from the chat history
-            3. Is optimized for web search
-            4. Maintains focus on the current question while adding context
-
-            Enhanced Search Query:
-            """
-            
-            response = self.client.chat.completions.create(
-                model=API_CONFIG["openai"]["model"],
-                messages=[
-                    {"role": "system", "content": "You are a search query optimization expert. Generate concise, focused search queries that combine current questions with relevant chat history context."},
-                    {"role": "user", "content": enhancement_prompt}
-                ],
-                temperature=0.3,
-                max_tokens=200
-            )
-            
-            enhanced_query = response.choices[0].message.content.strip()
-            print(f"🔍 Enhanced search query: {enhanced_query}")
-            return enhanced_query
-            
-        except Exception as e:
-            print(f"❌ Error generating enhanced search query: {e}")
-            return research_question
-
-    async def generate_research_queries(self, research_question, chat_history=None):
+    async def generate_research_queries(self, router_decision, router_query):
         """Generate multiple research queries for comprehensive analysis"""
         try:
-            # First, generate an enhanced query that includes chat history context
-            enhanced_query = await self.generate_enhanced_search_query(research_question, chat_history)
-            
+            if router_decision == "Provide_a_List":
+                SYSTEM_PROMPT = LIST_QUERY_GENERATION_PROMPT
+            elif router_decision == "Search_the_Internet":
+                SYSTEM_PROMPT = SEARCH_INTERNET_QUERY_GENERATION_PROMPT
             response = self.client.chat.completions.create(
                 model=API_CONFIG["openai"]["model"],
                 messages=[
-                    {"role": "system", "content": QUERY_GENERATION_PROMPT},
-                    {"role": "user", "content": f"Research Question: {enhanced_query}"}
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Research Question: {router_query}"}
                 ],
                 temperature=0.7
             )
@@ -282,7 +241,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                         queries = list(parsed_json.values())
                     else:
                         # Fallback for unexpected JSON types
-                        queries = [research_question]
+                        queries = [router_query]
                 else:
                     # Fallback if no JSON is found
                     queries = [line.strip().strip('"').strip("'") for line in response_text.split('\n') if line.strip()]
@@ -291,7 +250,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 print(f"❌ Error parsing query response: {e}")
                 print(f"Response: {response_text}")
                 # Fallback: use the original question
-                queries = [research_question]
+                queries = [router_query]
             
             print(f"✅ Generated {len(queries)} research queries:")
             for i, query in enumerate(queries, 1):
@@ -302,7 +261,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         except Exception as e:
             print(f"❌ Error generating queries: {e}")
             # Fallback: use the original question
-            return [research_question]
+            return [router_query]
     
     async def Map_Queries_to_Websites(self, generated_queries):
         """Override the mapping function to use dynamic websites"""
@@ -365,9 +324,9 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             ]
             return mappings
 
-    async def execute_provide_list_workflow(self, research_question, queries, chat_history=None):
+    async def execute_workflow(self, router_decision, research_question, queries):
         """Execute Provide_a_List workflow - comprehensive research approach"""
-        print_separator("📋 EXECUTING PROVIDE LIST WORKFLOW")
+        print_separator("📋 EXECUTING {router_decision} WORKFLOW")
         workflow_start = time.time()
         
         # Phase 1: Map queries to relevant websites (queries already include chat history context)
@@ -397,10 +356,17 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         print_separator("Executing Parallel Searches")
         
         async def execute_search_task(task):
+            if router_decision == "Provide_a_List":
+                DOMAIN_PROMPT = PERPLEXITY_LIST_DOMAIN_PROMPT
+                GENERAL_PROMPT = PERPLEXITY_LIST_GENERAL_PROMPT
+            elif router_decision == "Search_the_Internet":
+                DOMAIN_PROMPT = PERPLEXITY_TIC_DOMAIN_PROMPT
+                GENERAL_PROMPT = PERPLEXITY_TIC_GENERAL_PROMPT
+
             if task["type"] == "general_web":
-                return await self.async_perplexity_search(task["query"], prompt=PERPLEXITY_LIST_GENERAL_PROMPT)
+                return await self.async_perplexity_search(task["query"], prompt=GENERAL_PROMPT)
             else:  # domain_filtered
-                return await self.async_perplexity_search(task["query"], domains=task["websites"], prompt=PERPLEXITY_LIST_DOMAIN_PROMPT)
+                return await self.async_perplexity_search(task["query"], domains=task["websites"], prompt=DOMAIN_PROMPT)
         
         # Execute all searches in parallel
         search_results = await asyncio.gather(*[execute_search_task(task) for task in search_tasks], return_exceptions=True)
@@ -438,7 +404,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             "status": "completed",
             "message": "Research completed successfully.",
             "research_question": research_question,
-            "workflow_type": "provide_list_workflow",
+            "workflow_type": router_decision,
             "query_mappings": query_mappings,
             "execution_summary": {
                 "total_time_seconds": total_time,
@@ -459,115 +425,18 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
         
         return result_data
 
-    async def execute_tic_specific_questions_workflow(self, research_question, chat_history=None):
-        """Execute TIC Specific Questions workflow - direct search approach with intelligent mapping"""
-        print_separator("🎯 EXECUTING TIC SPECIFIC QUESTIONS WORKFLOW")
-        workflow_start = time.time()
-        
-        # Generate enhanced search query that includes chat history context
-        enhanced_query = await self.generate_enhanced_search_query(research_question, chat_history)
-        
-        # Phase 1: Map enhanced query to relevant websites
-        query_mappings = await self.Map_Queries_to_Websites([enhanced_query])
-        
-        # Phase 2: Prepare search tasks
-        search_tasks = []
-        
-        # Add general web search for the enhanced query
-        search_tasks.append({
-            "type": "general_web",
-            "query": enhanced_query,
-            "websites": []
-        })
-        
-        # Add domain-filtered search for mapped query
-        if query_mappings and query_mappings[0]["websites"]:
-            search_tasks.append({
-                "type": "domain_filtered",
-                "query": enhanced_query,
-                "websites": query_mappings[0]["websites"]  # All mapped websites for this query
-            })
-        
-        # Phase 3: Execute all searches in parallel
-        print_separator("Executing Direct Searches")
-        
-        async def execute_search_task(task):
-            if task["type"] == "general_web":
-                return await self.async_perplexity_search(task["query"], prompt=PERPLEXITY_TIC_GENERAL_PROMPT)
-            else:  # domain_filtered
-                return await self.async_perplexity_search(task["query"], domains=task["websites"], prompt=PERPLEXITY_TIC_DOMAIN_PROMPT)
-        
-        # Execute all searches in parallel
-        search_results = await asyncio.gather(*[execute_search_task(task) for task in search_tasks], return_exceptions=True)
-        
-        # Process results
-        processed_results = []
-        for i, result in enumerate(search_results):
-            task = search_tasks[i]
-            if isinstance(result, dict):
-                processed_results.append({
-                    "query": task["query"],
-                    "result": result["content"],
-                    "citations": result.get("citations", []),
-                    "extracted_links": self.extract_links_from_content(result["content"]),
-                    "status": "success",
-                    "search_type": task["type"],
-                    "websites": task["websites"]
-                })
-            else:
-                processed_results.append({
-                    "query": task["query"],
-                    "result": f"Error: {str(result)}",
-                    "citations": [],
-                    "extracted_links": [],
-                    "status": "error",
-                    "search_type": task["type"],
-                    "websites": task["websites"]
-                })
-        
-        total_time = time.time() - workflow_start
-
-        # Compile final results object matching the response model
-        result_data = {
-            "request_id": str(uuid.uuid4()),
-            "status": "completed",
-            "message": "Research completed successfully.",
-            "research_question": research_question,
-            "workflow_type": "tic_specific_questions",
-            "query_mappings": query_mappings,
-            "execution_summary": {
-                "total_time_seconds": total_time,
-                "total_searches": len(search_tasks),
-                "general_searches": len([t for t in search_tasks if t["type"] == "general_web"]),
-                "domain_searches": len([t for t in search_tasks if t["type"] == "domain_filtered"])
-            },
-            "search_results": processed_results,
-            "timestamp": datetime.now().isoformat(),
-            "processing_time": total_time
-        }
-        
-        print_separator("🎯 TIC SPECIFIC QUESTIONS WORKFLOW COMPLETE")
-        print(f"⏱️  Total Time: {total_time:.2f} seconds")
-        print(f"📊 Total Searches: {len(search_tasks)}")
-        print(f"🌐 General Web Searches: {len([t for t in search_tasks if t['type'] == 'general_web'])}")
-        print(f"🏢 Domain-Filtered Searches: {len([t for t in search_tasks if t['type'] == 'domain_filtered'])}")
-        
-        return result_data
 
     async def route_research_request(self, research_question, chat_history=None):
         """Route research request to appropriate workflow based on router decision"""
         try:
             # Get router decision with chat history context
-            router_decision = await self.get_router_decision(research_question, chat_history)
+            router_decision, router_query = await self.get_router_decision(research_question, chat_history)
             
-            if router_decision == "Provide_a_List":
+            if router_decision == "Provide_a_List" or router_decision == "Search_the_Internet":
                 # Generate multiple queries for comprehensive research
-                queries = await self.generate_research_queries(research_question, chat_history)
-                return await self.execute_provide_list_workflow(research_question, queries, chat_history)
+                queries = await self.generate_research_queries(router_decision, router_query)
+                return await self.execute_workflow(router_decision, research_question, queries)
                 
-            elif router_decision == "Search_the_Internet":
-                # Direct search approach with enhanced query
-                return await self.execute_tic_specific_questions_workflow(research_question, chat_history)
                 
             elif isinstance(router_decision, dict) and router_decision.get("type") == "direct_response":
                 # Handle direct LLM response (no tool selected)
