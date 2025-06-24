@@ -110,7 +110,7 @@ class OpenAIService:
         f"- Semantic Profile: {site.get('semantic_profile', '')}\n"
         f"- Boost Keywords: {', '.join(site.get('boost_keywords', [])) or 'None'}"
     ).strip()
-    for site in self.dynamic_websites
+    for site in dynamic_websites
 ]
 
         # Use the existing QUERY_MAPPING_PROMPT from prompts.py
