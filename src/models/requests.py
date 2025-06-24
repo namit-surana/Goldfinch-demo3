@@ -7,11 +7,6 @@ from typing import List, Dict, Any, Optional
 from .domain import DomainMetadata
 
 
-class ChatMessage(BaseModel):
-    """Chat message model for conversation history"""
-    role: str
-    content: str
-
 
 class ResearchRequest(BaseModel):
     """Main research request model"""
@@ -23,7 +18,5 @@ class ResearchRequest(BaseModel):
         ..., 
         description="List of domain metadata for TIC websites"
     )
-    chat_history: List[ChatMessage] = Field(
-        default=[], 
-        description="Previous chat messages for context"
-    ) 
+    chat_history: List[Dict[str, str]] = Field(
+        default=[], description="Previous chat messages for context")

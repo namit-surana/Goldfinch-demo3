@@ -20,17 +20,9 @@ async def start_research(request: ResearchRequest):
         # Initialize dynamic workflow with provided domain metadata
         workflow = DynamicTICResearchWorkflow(request.domain_list_metadata)
         
-        # Convert chat history to the format expected by the workflow
-        chat_history = []
-        if request.chat_history:
-            for msg in request.chat_history:
-                chat_history.append({
-                    "role": msg.role,
-                    "content": msg.content
-                })
         
         # Process the research request and wait for the result
-        result = await workflow.route_research_request(request.research_question, chat_history)
+        result = await workflow.route_research_request(request.research_question, request.chat_history)
         
         if result is None:
             raise HTTPException(
