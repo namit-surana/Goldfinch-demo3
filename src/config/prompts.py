@@ -84,7 +84,7 @@ INPUT
 
 TASK
 1. Read `Research Question` and infer which certifications, standards, or compliance checks are required.  
-2. Write **exactly 2–3 English search queries** (no overlap) that together cover different angles *so that, when combined, they retrieve a *comprehensive list* of all relevant certifications and requirements.** Make queries specific to testing, inspection, certification, and trade compliance contexts.
+2. Write **exactly 2-3 English search queries** (no overlap) that together cover different angles *so that, when combined, they retrieve a *comprehensive list* of all relevant certifications and requirements.** Make queries specific to testing, inspection, certification, and trade compliance contexts.
 
 Key TIC Areas to Consider:
 - Product testing and evaluation

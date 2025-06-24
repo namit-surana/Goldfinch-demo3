@@ -5,7 +5,7 @@ API endpoints for the TIC Research API
 from fastapi import HTTPException
 from datetime import datetime
 from typing import List, Dict, Any
-from ..models import ResearchRequest, ResearchResultResponse, ChatMessage
+from ..models import ResearchRequest, ResearchResultResponse
 from ..core import DynamicTICResearchWorkflow
 from .server import app
 
