@@ -154,9 +154,9 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 GENERAL_PROMPT = PERPLEXITY_TIC_GENERAL_PROMPT
                 structured_output = False
             else:
-                DOMAIN_PROMPT = PERPLEXITY_LIST_DOMAIN_PROMPT
-                GENERAL_PROMPT = PERPLEXITY_LIST_GENERAL_PROMPT
-                structured_output = True
+                DOMAIN_PROMPT = PERPLEXITY_TIC_DOMAIN_PROMPT
+                GENERAL_PROMPT = PERPLEXITY_TIC_GENERAL_PROMPT
+                structured_output = False
 
             if task["type"] == "general_web":
                 return await self.perplexity_service.search(
@@ -209,7 +209,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             "message": "Research completed successfully.",
             "research_question": research_question,
             "workflow_type": router_decision,
-            "query_mappings": query_mappings,
+            "query_map     pings": query_mappings,
             "execution_summary": {
                 "total_time_seconds": total_time,
                 "total_searches": len(search_tasks),

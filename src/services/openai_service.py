@@ -23,26 +23,8 @@ class OpenAIService:
         """Get router decision for which workflow to use"""
         from ..config import ROUTER_SYSTEM_PROMPT
         
-        # Build user prompt with chat history context
-        if chat_history and len(chat_history) > 0:
-            # Format chat history for context
-            chat_context = "\n".join([
-                f"{msg['role']}: {msg['content']}" for msg in chat_history[-7:]  # Last 7 messages for context
-            ])
-            user_prompt = f"""
-            Chat History Context:
-            {chat_context}
-            
-            Current Research Question: {research_question}
-            
-            Decide which research approach to use based on the current question and chat history context.
-            """
-        else:
-            user_prompt = f"""
-            Research Question: {research_question}
-            
-            Decide which research approach to use.
-            """
+        full_message = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}]
+        full_message.extend(chat_history or [])
         
         try:
             # Add timeout for router decision (15 seconds)
@@ -52,10 +34,7 @@ class OpenAIService:
             async def make_openai_call():
                 return self.client.chat.completions.create(
                     model=self.model,
-                    messages=[
-                        {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt}
-                    ],
+                    messages=full_message,
                     tools=self.tools,
                     tool_choice="auto"
                 )
@@ -120,32 +99,32 @@ class OpenAIService:
         from ..config import QUERY_MAPPING_PROMPT
         
         # Create rich website descriptions using all available metadata
-        rich_website_descriptions = []
-        for site in dynamic_websites:
-            description = f"""
-Website: {site['name']}
-- Domain: {site.get('domain', 'N/A')}
-- Region: {site.get('region', 'N/A')}
-- Organization Type: {site.get('org_type', 'N/A')}
-- Aliases: {', '.join(site.get('aliases', [])) or 'None'}
-- Industry Focus: {', '.join(site.get('industry_tags', [])) or 'General'}
-- Semantic Profile: {site.get('semantic_profile', '')}
-- Boost Keywords: {', '.join(site.get('boost_keywords', [])) or 'None'}
-"""
-            rich_website_descriptions.append(description.strip())
+        rich_website_descriptions = [
+    (
+        f"Website: {site['name']}\n"
+        f"- Domain: {site.get('domain', 'N/A')}\n"
+        f"- Region: {site.get('region', 'N/A')}\n"
+        f"- Organization Type: {site.get('org_type', 'N/A')}\n"
+        f"- Aliases: {', '.join(site.get('aliases', [])) or 'None'}\n"
+        f"- Industry Focus: {', '.join(site.get('industry_tags', [])) or 'General'}\n"
+        f"- Semantic Profile: {site.get('semantic_profile', '')}\n"
+        f"- Boost Keywords: {', '.join(site.get('boost_keywords', [])) or 'None'}"
+    ).strip()
+    for site in self.dynamic_websites
+]
 
         # Use the existing QUERY_MAPPING_PROMPT from prompts.py
-        mapping_prompt = QUERY_MAPPING_PROMPT.format(
-            available_websites="\n\n".join(rich_website_descriptions),
-            queries="\n".join([f"{i+1}. {query}" for i, query in enumerate(generated_queries)])
-        )
+        available_websites="\n\n".join(rich_website_descriptions),
+        queries="\n".join([f"{i+1}. {query}" for i, query in enumerate(generated_queries)])
+
+        user_prompt = f"Research Queries: {queries}\nWebsites: {available_websites}\n"
 
         try:
             response = self.client.responses.parse(
                 model=self.model,
                 input=[
                     {"role": "system", "content": QUERY_MAPPING_PROMPT},
-                    {"role": "user", "content": mapping_prompt}
+                    {"role": "user", "content": user_prompt}
                 ],
                 text_format=QueryMappings
             )
@@ -165,7 +144,7 @@ Website: {site['name']}
                 ]
             print(f"✅ Mapped {len(mappings)} queries to websites:")
             for mapping in mappings:
-                print(f"  Query: {mapping['query'][:50]}...")
+                print(f"  Query: {mapping['query'][:10]}...")
                 print(f"  Websites: {len(mapping['websites'])} sites")
             return mappings
         except Exception as e:
