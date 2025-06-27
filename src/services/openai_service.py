@@ -193,13 +193,11 @@ Please provide a comprehensive summary of these research findings.
 """
             
             response = self.client.chat.completions.create(
-                model=self.model,
+                model="gpt-4.1",
                 messages=[
                     {"role": "system", "content": RESEARCH_SUMMARY_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=2000,
-                temperature=0.3
+                ]
             )
             
             summary = response.choices[0].message.content
