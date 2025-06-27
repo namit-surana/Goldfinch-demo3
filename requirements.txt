@@ -1,9 +1,14 @@
 openai
-python-dotenv
+python-dotenv==1.0.0
 aiohttp
 beautifulsoup4
 lxml
 fastapi
 uvicorn[standard]
 pydantic
-python-multipart 
+python-multipart
+# Database dependencies
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.23
+alembic==1.13.1
+asyncpg==0.29.0 

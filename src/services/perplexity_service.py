@@ -26,6 +26,7 @@ class PerplexityService:
     async def search(self, query: str, domains: Optional[List[str]] = None, 
                     prompt: Optional[str] = None, use_structured_output: bool = False) -> Dict[str, Any]:
         """Async Perplexity search using aiohttp with optional domain filtering, custom prompt, and structured output"""
+        print("[PERPLEXITY SERVICE] search called with:", query, domains, prompt, use_structured_output)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -58,7 +59,9 @@ class PerplexityService:
         
         async with aiohttp.ClientSession() as session:
             async with session.post(self.url, headers=headers, json=body) as response:
+                print("[PERPLEXITY SERVICE] HTTP response status:", response.status)
                 data = await response.json()
+                print("[PERPLEXITY SERVICE] response data:", data)
                 
                 # Extract content and citations from response
                 content = data['choices'][0]['message']['content']
@@ -69,6 +72,7 @@ class PerplexityService:
                     parsed_data = json.loads(content)
                     certifications = Certifications(**parsed_data)
                     structured_content = json.dumps([cert.dict() for cert in certifications.certifications], indent=2)
+                    print("[PERPLEXITY SERVICE] structured_content:", structured_content)
                     return {
                         "content": structured_content,
                         "citations": citations,

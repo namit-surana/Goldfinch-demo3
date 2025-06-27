@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TIC Research API - Streaming Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .progress {
+            margin-top: 20px;
+        }
+        .progress-item {
+            padding: 8px;
+            margin: 5px 0;
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .event-log {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TIC Research API - Streaming Client</h1>
+        
+        <div class="form-group">
+            <label for="researchQuestion">Research Question:</label>
+            <textarea id="researchQuestion" rows="3" placeholder="Enter your research question here...">what are required certifications to export honey from India to US</textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="apiUrl">API URL:</label>
+            <input type="text" id="apiUrl" value="http://localhost:8000/research/stream" placeholder="Enter your API URL">
+        </div>
+        
+        <button onclick="startResearch()" id="startBtn">Start Research</button>
+        <button onclick="clearResults()" id="clearBtn">Clear Results</button>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <div id="progress" class="progress" style="display: none;">
+            <h3>Research Progress:</h3>
+            <div id="progressItems"></div>
+        </div>
+        
+        <div id="summary" class="summary" style="display: none;">
+            <h3>Research Summary:</h3>
+            <div id="summaryContent"></div>
+        </div>
+        
+        <div id="eventLog" class="event-log" style="display: none;">
+            <h3>Event Log:</h3>
+            <div id="eventLogContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+        }
+        
+        function addProgressItem(message) {
+            const progressItems = document.getElementById('progressItems');
+            const item = document.createElement('div');
+            item.className = 'progress-item';
+            item.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            progressItems.appendChild(item);
+        }
+        
+        function addEventLog(event, data) {
+            const eventLogContent = document.getElementById('eventLogContent');
+            const item = document.createElement('div');
+            item.textContent = `${new Date().toLocaleTimeString()} - ${event}: ${JSON.stringify(data, null, 2)}`;
+            eventLogContent.appendChild(item);
+            eventLogContent.scrollTop = eventLogContent.scrollHeight;
+        }
+        
+        function startResearch() {
+            const researchQuestion = document.getElementById('researchQuestion').value.trim();
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            
+            if (!researchQuestion) {
+                showStatus('Please enter a research question', 'error');
+                return;
+            }
+            
+            if (!apiUrl) {
+                showStatus('Please enter an API URL', 'error');
+                return;
+            }
+            
+            // Clear previous results
+            clearResults();
+            
+            // Disable start button
+            document.getElementById('startBtn').disabled = true;
+            
+            // Show progress section
+            document.getElementById('progress').style.display = 'block';
+            document.getElementById('eventLog').style.display = 'block';
+            
+            showStatus('Connecting to research API...', 'info');
+            
+            // Prepare request data
+            const requestData = {
+                research_question: researchQuestion,
+                chat_history: [],
+                domain_list_metadata: []
+            };
+            
+            // Create EventSource for Server-Sent Events
+            const url = new URL(apiUrl);
+            const params = new URLSearchParams();
+            params.append('data', JSON.stringify(requestData));
+            
+            // For POST requests with SSE, we need to use fetch with streaming
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                },
+                body: JSON.stringify(requestData)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                showStatus('Research started - streaming results...', 'info');
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                function readStream() {
+                    return reader.read().then(({ done, value }) => {
+                        if (done) {
+                            showStatus('Research completed', 'success');
+                            document.getElementById('startBtn').disabled = false;
+                            return;
+                        }
+                        
+                        const chunk = decoder.decode(value);
+                        const lines = chunk.split('\n');
+                        
+                        lines.forEach(line => {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const eventData = JSON.parse(line.substring(6));
+                                    handleEvent(eventData.event, eventData.data);
+                                } catch (e) {
+                                    console.error('Error parsing event data:', e);
+                                }
+                            }
+                        });
+                        
+                        return readStream();
+                    });
+                }
+                
+                return readStream();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+                document.getElementById('startBtn').disabled = false;
+            });
+        }
+        
+        function handleEvent(event, data) {
+            addEventLog(event, data);
+            
+            switch (event) {
+                case 'research_started':
+                    addProgressItem('Research started');
+                    break;
+                    
+                case 'router_decision':
+                    addProgressItem(data.message || 'Determining research workflow...');
+                    break;
+                    
+                case 'query_generation':
+                    addProgressItem(data.message || 'Generating research queries...');
+                    break;
+                    
+                case 'query_mapping':
+                    addProgressItem(data.message || 'Mapping queries to websites...');
+                    break;
+                    
+                case 'search_progress':
+                    addProgressItem(data.message || 'Executing searches...');
+                    break;
+                    
+                case 'summary_generation':
+                    addProgressItem(data.message || 'Generating AI summary...');
+                    break;
+                    
+                case 'research_completed':
+                    addProgressItem('Research completed successfully!');
+                    showSummary(data);
+                    break;
+                    
+                case 'research_failed':
+                    addProgressItem('Research failed');
+                    showStatus(data.message || 'Research failed', 'error');
+                    break;
+                    
+                case 'research_error':
+                    addProgressItem('Error occurred');
+                    showStatus(data.message || 'An error occurred', 'error');
+                    break;
+            }
+        }
+        
+        function showSummary(data) {
+            const summaryDiv = document.getElementById('summary');
+            const summaryContent = document.getElementById('summaryContent');
+            
+            summaryContent.innerHTML = `
+                <strong>Research Question:</strong> ${data.research_question}<br><br>
+                <strong>Workflow Type:</strong> ${data.workflow_type}<br><br>
+                <strong>Processing Time:</strong> ${data.processing_time?.toFixed(2)} seconds<br><br>
+                <strong>Summary:</strong><br>
+                ${data.summary}
+            `;
+            
+            summaryDiv.style.display = 'block';
+        }
+        
+        function clearResults() {
+            document.getElementById('status').style.display = 'none';
+            document.getElementById('progress').style.display = 'none';
+            document.getElementById('summary').style.display = 'none';
+            document.getElementById('eventLog').style.display = 'none';
+            document.getElementById('progressItems').innerHTML = '';
+            document.getElementById('summaryContent').innerHTML = '';
+            document.getElementById('eventLogContent').innerHTML = '';
+            document.getElementById('startBtn').disabled = false;
+        }
+    </script>
+</body>
+</html> 

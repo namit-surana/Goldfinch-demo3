@@ -23,8 +23,12 @@ class OpenAIService:
         """Get router decision for which workflow to use"""
         from ..config import ROUTER_SYSTEM_PROMPT
         
+        print("[OPENAI SERVICE] get_router_decision called with:", research_question, chat_history)
+        
         full_message = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}]
         full_message.extend(chat_history or [])
+        
+        print("[OPENAI SERVICE] full_message:", full_message)
         
         try:
             # Add timeout for router decision (15 seconds)
@@ -41,6 +45,8 @@ class OpenAIService:
             
             # Execute with 15-second timeout
             response = await asyncio.wait_for(make_openai_call(), timeout=15.0)
+            
+            print("[OPENAI SERVICE] router response:", response)
             
             router_time = time.time() - router_start
             
@@ -68,6 +74,8 @@ class OpenAIService:
         """Generate multiple research queries for comprehensive analysis"""
         from ..config import LIST_QUERY_GENERATION_PROMPT, SEARCH_INTERNET_QUERY_GENERATION_PROMPT
         
+        print("[OPENAI SERVICE] generate_research_queries called with:", router_decision, router_query)
+        
         try:
             if router_decision == "Provide_a_List":
                 SYSTEM_PROMPT = LIST_QUERY_GENERATION_PROMPT
@@ -75,6 +83,8 @@ class OpenAIService:
                 SYSTEM_PROMPT = SEARCH_INTERNET_QUERY_GENERATION_PROMPT
             else:
                 return [router_query]
+            
+            print("[OPENAI SERVICE] SYSTEM_PROMPT:", SYSTEM_PROMPT)
             
             response = self.client.responses.parse(
                 model=self.model,
@@ -84,6 +94,7 @@ class OpenAIService:
                 ],
                 text_format=ResearchQueries
             )
+            print("[OPENAI SERVICE] generate_research_queries response:", response)
             queries = response.output_parsed.queries
             print(f"✅ Generated {len(queries)} research queries:")
             for i, query in enumerate(queries, 1):
@@ -97,6 +108,8 @@ class OpenAIService:
     async def map_queries_to_websites(self, generated_queries: List[str], dynamic_websites: List[Dict]) -> List[Dict[str, Any]]:
         """Map generated queries to relevant websites using OpenAI"""
         from ..config import QUERY_MAPPING_PROMPT
+        
+        print("[OPENAI SERVICE] map_queries_to_websites called with:", generated_queries, dynamic_websites)
         
         # Create rich website descriptions using all available metadata
         rich_website_descriptions = [
@@ -119,6 +132,8 @@ class OpenAIService:
 
         user_prompt = f"Research Queries: {queries}\nWebsites: {available_websites}\n"
 
+        print("[OPENAI SERVICE] user_prompt:", user_prompt)
+
         try:
             response = self.client.responses.parse(
                 model=self.model,
@@ -128,6 +143,7 @@ class OpenAIService:
                 ],
                 text_format=QueryMappings
             )
+            print("[OPENAI SERVICE] map_queries_to_websites response:", response)
             # Debug: Print the raw output_parsed from OpenAI
             print(f"[DEBUG] OpenAI mapping response.output_parsed: {response.output_parsed}")
             mappings = [
@@ -155,4 +171,42 @@ class OpenAIService:
                 {"query": query, "websites": all_websites}
                 for query in generated_queries
             ]
-            return mappings 
+            return mappings
+
+    async def generate_research_summary(self, research_results: Dict[str, Any]) -> str:
+        """Generate a summary of research results using OpenAI"""
+        from ..config import RESEARCH_SUMMARY_SYSTEM_PROMPT
+        
+        print("[OPENAI SERVICE] generate_research_summary called")
+        
+        try:
+            # Convert research results to a user-friendly format
+            user_prompt = f"""
+Research Question: {research_results.get('research_question', 'N/A')}
+Workflow Type: {research_results.get('workflow_type', 'N/A')}
+Execution Summary: {research_results.get('execution_summary', {})}
+
+Search Results:
+{json.dumps(research_results.get('search_results', []), indent=2)}
+
+Please provide a comprehensive summary of these research findings.
+"""
+            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": RESEARCH_SUMMARY_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=2000,
+                temperature=0.3
+            )
+            
+            summary = response.choices[0].message.content
+            print(f"✅ Generated research summary: {len(summary)} characters")
+            return summary
+            
+        except Exception as e:
+            print(f"❌ Error generating research summary: {e}")
+            # Fallback: return a basic summary
+            return f"Research completed for: {research_results.get('research_question', 'N/A')}. Found {len(research_results.get('search_results', []))} search results." 

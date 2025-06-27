@@ -30,13 +30,28 @@ tic-research-api/
 │   └── 📁 utils/                    # Utilities
 │       ├── __init__.py
 │       └── helpers.py               # Helper functions
+├── 📁 database/                     # Database module (NEW STRUCTURE)
+│   ├── 📁 services/                 # Database service layer
+│   │   ├── __init__.py
+│   │   ├── database_service.py      # Core database operations
+│   │   └── llm_db_service.py        # LLM-database integration
+│   ├── 📁 api/                      # Database API endpoints
+│   │   ├── __init__.py
+│   │   └── database_endpoints.py    # REST API for database operations
+│   ├── __init__.py                  # Database module initialization
+│   ├── models.py                    # SQLAlchemy ORM models
+│   ├── schema.sql                   # Database schema definitions
+│   ├── connection.py                # Database connection utilities
+│   └── README.md                    # Database module documentation
 ├── 📁 tests/                        # Test files
 │   ├── test_api_client.py           # API client tests
 │   └── test_structured_output.py    # Structured output tests
 ├── 🐍 start_api.py                  # Application entry point
 ├── 📄 requirements.txt              # Python dependencies
 ├── 📄 render.yaml                   # Render deployment configuration
-├── 📄 .env.example                  # Environment variables template
+├── 📄 env_example.txt               # Environment variables template
+├── 📄 test_database_integration.py  # Database integration tests
+├── 📄 DATABASE_INTEGRATION.md       # Database integration documentation
 └── 📄 README.md                     # This file
 ```
 
@@ -47,6 +62,7 @@ tic-research-api/
 - Python 3.8+
 - OpenAI API key
 - Perplexity AI API key
+- AWS RDS PostgreSQL (for database functionality)
 
 ### Installation
 
@@ -63,11 +79,19 @@ tic-research-api/
 
 3. **Set up environment variables**
    ```bash
-   cp .env.example .env
-   # Edit .env with your API keys
+   cp env_example.txt .env
+   # Edit .env with your API keys and database configuration
    ```
 
-4. **Start the API server**
+4. **Set up database (optional)**
+   ```bash
+   # Configure AWS RDS PostgreSQL
+   # Update .env with database credentials
+   # Run database integration tests
+   python test_database_integration.py
+   ```
+
+5. **Start the API server**
    ```bash
    python start_api.py
    ```
@@ -122,6 +146,15 @@ The project follows a clean, modular architecture with clear separation of conce
   - `helpers.py`: Common utility functions
 - **Benefits**: Reusable code, clean separation of utilities
 
+#### **7. Database Module (`database/`) - NEW**
+- **Purpose**: Complete database functionality and persistence
+- **Key Components**:
+  - `services/`: Database service layer with core operations
+  - `api/`: Database-specific REST endpoints
+  - `models.py`: SQLAlchemy ORM models
+  - `schema.sql`: Database schema definitions
+- **Benefits**: Persistent storage, analytics, session management, LLM integration
+
 ## 🔄 Workflow Types
 
 The system supports two main research workflows:
@@ -154,151 +187,94 @@ The system supports two main research workflows:
 - **OpenAI Integration**: Uses modern `text_format` for reliable parsing
 - **Perplexity Integration**: JSON schema-based structured output
 
+### Database Integration - NEW
+- **Persistent Storage**: All conversations and research stored in PostgreSQL
+- **Session Management**: Multi-user session support with conversation history
+- **Analytics**: Comprehensive tracking of user interactions and performance
+- **LLM Context**: Enhanced context retrieval for better responses
+- **Performance Monitoring**: Real-time performance tracking and optimization
+
 ## 📡 API Endpoints
 
-### POST `/research`
+### Main Research Endpoint
+- **`POST /research`**: Primary research endpoint with domain metadata and chat history
 
-Main research endpoint that processes TIC-related queries.
+### Database Endpoints - NEW
+- **`GET /db/health`**: Database health check
+- **`POST /db/sessions/create`**: Create new chat session
+- **`GET /db/sessions/{session_id}`**: Get session information
+- **`POST /db/messages/store`**: Store chat message
+- **`GET /db/messages/{session_id}/recent`**: Get recent messages for context
+- **`POST /db/research/store`**: Store research request
+- **`GET /db/research/history/{session_id}`**: Get research history
+- **`GET /db/context/{session_id}`**: Get comprehensive research context
+- **`POST /db/analytics/log`**: Log analytics events
 
-**Request Body:**
-```json
-{
-  "research_question": "What certifications are needed to export electronics to the EU?",
-  "domain_list_metadata": [
-    {
-      "name": "FDA",
-      "domain": "fda.gov",
-      "region": "US",
-      "org_type": "Regulatory Body",
-      "industry_tags": ["food", "drugs", "medical devices"],
-      "semantic_profile": "US Food and Drug Administration...",
-      "boost_keywords": ["FDA approval", "food safety"],
-      "aliases": ["Food and Drug Administration"]
-    }
-  ],
-  "chat_history": [
-    {"role": "user", "content": "Previous question"},
-    {"role": "assistant", "content": "Previous answer"}
-  ]
-}
-```
+### Supporting Endpoints
+- **`GET /health`**: Health check
+- **`GET /sessions/{session_id}/messages`**: Chat history retrieval
+- **`GET /sessions/{session_id}/research-history`**: Research history
+- **`POST /sessions`**: Session creation
 
-**Response:**
-```json
-{
-  "request_id": "uuid",
-  "status": "completed",
-  "research_question": "Original question",
-  "workflow_type": "Provide_a_List",
-  "search_results": [...],
-  "query_mappings": [...],
-  "execution_summary": {...},
-  "timestamp": "2024-01-01T00:00:00",
-  "processing_time": 15.5
-}
-```
+## 💡 Key Strengths
 
-### GET `/health`
+1. **Intelligent Routing**: AI-powered decision making for workflow selection
+2. **Scalable Architecture**: Modular design allows easy extension
+3. **Rich Metadata**: Comprehensive domain information for precise targeting
+4. **Parallel Processing**: Efficient concurrent search execution
+5. **Structured Output**: Type-safe, reliable data formats
+6. **Context Awareness**: Chat history integration for better responses
+7. **Comprehensive Logging**: Full audit trail and analytics
+8. **Database Integration**: Persistent storage and session management
+9. **Performance Monitoring**: Real-time analytics and optimization
+10. **Clean Organization**: Well-structured codebase with clear separation of concerns
 
-Health check endpoint to verify API status.
+## 🔍 Areas for Enhancement
 
-### GET `/`
+1. **Authentication**: User authentication and authorization
+2. **Rate Limiting**: API rate limiting for external services
+3. **Caching**: Result caching for repeated queries
+4. **Advanced Analytics**: More sophisticated analytics and reporting
+5. **Multi-tenancy**: Support for multiple organizations
+6. **Real-time Features**: WebSocket connections for live updates
 
-Root endpoint with API information.
+## 🎯 Use Cases
+
+This system is ideal for:
+- **Manufacturers** seeking export compliance information
+- **Compliance Managers** researching regulatory requirements
+- **Exporters** understanding certification needs
+- **Consultants** providing regulatory guidance
+- **Small-to-medium businesses** navigating global trade requirements
 
 ## 🧪 Testing
 
-### Run Tests
+### Run All Tests
 ```bash
-# API client tests
+# API tests
 python tests/test_api_client.py
+
+# Database integration tests
+python test_database_integration.py
 
 # Structured output tests
 python tests/test_structured_output.py
 ```
 
-### Postman Collection
-Import `TIC_Research_API.postman_collection.json` for API testing.
-
-## 🚀 Deployment
-
-### Local Development
+### Database Testing
 ```bash
-python start_api.py
+# Test database connection and operations
+python test_database_integration.py
+
+# Test specific database endpoints
+curl http://localhost:8000/db/health
 ```
 
-### Production Deployment
-The project includes `render.yaml` for easy deployment on Render:
+## 📚 Documentation
 
-1. Connect your repository to Render
-2. Set environment variables
-3. Deploy automatically
+- **Main Documentation**: This README
+- **Database Integration**: `DATABASE_INTEGRATION.md`
+- **Database Module**: `database/README.md`
+- **API Documentation**: Available at `/docs` when running the server
 
-## 🔧 Configuration
-
-### Environment Variables
-
-Create a `.env` file with the following variables:
-
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-PERPLEXITY_API_KEY=your_perplexity_api_key_here
-```
-
-### API Configuration
-
-The system uses the following default configuration:
-
-- **OpenAI Model**: `gpt-4o-2024-08-06`
-- **Perplexity Model**: `sonar-pro`
-- **Temperature**: 0.1 (for consistent results)
-
-## 📚 Benefits of Modular Architecture
-
-### **1. Maintainability**
-- Clear separation of concerns
-- Easy to locate and modify specific functionality
-- Reduced code coupling
-
-### **2. Testability**
-- Each module can be tested independently
-- Mock external dependencies easily
-- Clear interfaces for unit testing
-
-### **3. Scalability**
-- Easy to add new services or workflows
-- Modular design supports horizontal scaling
-- Clear extension points
-
-### **4. Reusability**
-- Services can be reused across different workflows
-- Models provide consistent data structures
-- Utilities are shared across the application
-
-### **5. Development Experience**
-- Clear project structure for new developers
-- Intuitive import paths
-- Easy to understand code organization
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes following the modular structure
-4. Add tests for new functionality
-5. Submit a pull request
-
-## 📄 License
-
-This project is proprietary software developed by Mangrove AI Inc.
-
-## 🆘 Support
-
-For support and questions:
-- Check the documentation in the `docs/` folder
-- Review the Postman collection for API examples
-- Contact the development team
-
----
-
-**Built with ❤️ by Mangrove AI** 
+The codebase demonstrates excellent software engineering practices with clean architecture, comprehensive error handling, intelligent AI integration, and robust database functionality for a specialized domain. 

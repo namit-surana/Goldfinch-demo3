@@ -21,6 +21,19 @@ class ResearchResultResponse(BaseModel):
     processing_time: Optional[float] = None
 
 
+class ResearchSummaryResponse(BaseModel):
+    """Response model for research results with AI-generated summary"""
+    request_id: str
+    status: str
+    message: str
+    research_question: str
+    workflow_type: Optional[str] = None
+    execution_summary: Optional[Dict[str, Any]] = None
+    summary: str
+    timestamp: str
+    processing_time: Optional[float] = None
+
+
 class QueryMapping(BaseModel):
     """Model for query-to-website mapping"""
     query: str

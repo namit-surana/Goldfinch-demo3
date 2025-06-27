@@ -4,6 +4,8 @@ FastAPI server configuration
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from .endpoints import router
+from database.api import database_endpoints
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -19,4 +21,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-) 
+)
+
+# Include routers
+app.include_router(router)
+app.include_router(database_endpoints.db_router) 
