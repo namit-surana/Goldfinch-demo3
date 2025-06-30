@@ -8,26 +8,122 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 import json
 import asyncio
-from ..models import ResearchRequest, ResearchResultResponse, ResearchSummaryResponse
+import aiohttp
+from ..models import ResearchRequest, ResearchResultResponse, ResearchSummaryResponse, DomainMetadata
 from ..core import DynamicTICResearchWorkflow
 from ..services.openai_service import OpenAIService
+from database.services import get_llm_db_service, get_database_service
 
 router = APIRouter()
 
 @router.post("/research", response_model=ResearchSummaryResponse)
-async def start_research(request: ResearchRequest):
+async def start_research(request: dict):
     """
     Start a new research request and get the results with AI-generated summary.
-    This is a synchronous endpoint and may take a while to respond.
+    This endpoint expects the user message to already be stored by the frontend.
     """
-    print("[API] /research called with request:", request)
+    session_id = request.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    
+    print(f"[API] /research called with session_id: {session_id}")
     
     try:
-        # Initialize dynamic workflow with provided domain metadata
-        workflow = DynamicTICResearchWorkflow(request.domain_list_metadata)
+        # Step 1: Get the last 10 messages from the database
+        print("[API] Step 1: Getting last 10 messages...")
+        db_service = get_database_service()
+        recent_messages = await db_service.get_recent_messages(session_id, 10)
+        print(f"[API] Retrieved {len(recent_messages)} recent messages")
         
-        # Process the research request and wait for the result
-        result = await workflow.route_research_request(request.research_question, request.chat_history)
+        if not recent_messages:
+            raise HTTPException(
+                status_code=400,
+                detail="No messages found in session. Please ensure the user message is stored first."
+            )
+        
+        # Step 2: Get the latest user message (the most recent message from the user)
+        latest_user_message = None
+        for message in reversed(recent_messages):  # Start from the most recent
+            if message.get("role") == "user":
+                latest_user_message = message.get("content")
+                break
+        
+        if not latest_user_message:
+            raise HTTPException(
+                status_code=400,
+                detail="No user message found in recent messages. Please ensure a user message is stored first."
+            )
+        
+        print(f"[API] Latest user message: {latest_user_message}")
+        
+        # Step 3: Call external RAG API with conversation history
+        print("[API] Step 3: Calling external RAG API...")
+        domain_metadata = await call_rag_api(recent_messages)
+        print(f"[API] RAG API returned {len(domain_metadata)} domain metadata items")
+        
+        # Step 4: Convert domain metadata and get router decision
+        print("[API] Step 4: Getting router decision...")
+        
+        # Convert domain metadata dictionaries to DomainMetadata objects
+        domain_metadata_objects = []
+        for domain_dict in domain_metadata:
+            try:
+                domain_obj = DomainMetadata(**domain_dict)
+                domain_metadata_objects.append(domain_obj)
+            except Exception as e:
+                print(f"[API] Warning: Could not convert domain metadata {domain_dict.get('name', 'unknown')}: {str(e)}")
+        
+        # print(f"[API] Converted {len(domain_metadata_objects)} domain metadata objects")
+        
+        # Get router decision and enhanced query
+        openai_service = OpenAIService()
+        router_answer = await openai_service.get_router_decision(latest_user_message, recent_messages)
+        
+        if not router_answer:
+            raise HTTPException(status_code=500, detail="Router decision failed")
+            
+        router_decision = router_answer["type"]
+        enhanced_query = router_answer["content"]
+        
+        print(f"[API] Router decision: {router_decision}")
+        print(f"[API] Enhanced query: {enhanced_query}")
+        
+        # Step 5: Store research request with enhanced query
+        print("[API] Step 5: Storing research request...")
+        request_id = await db_service.store_research_request(
+            session_id=session_id,
+            research_question=enhanced_query,
+            workflow_type=router_decision
+        )
+        print(f"[API] Research request stored. Request ID: {request_id}")
+        
+        # Step 6: Generate parallel queries and store in query_logs
+        print("[API] Step 6: Generating parallel queries...")
+        parallel_queries = await openai_service.generate_research_queries(router_decision, enhanced_query)
+        print(f"[API] Generated {len(parallel_queries)} parallel queries")
+        
+        # Store each parallel query in query_logs table with status="pending"
+        query_log_ids = []
+        for i, query in enumerate(parallel_queries):
+            query_log = await db_service.store_query_log(
+                request_id=request_id,
+                query_text=query,
+                query_type="parallel_search"
+            )
+            query_log_ids.append(query_log["query_id"])
+            print(f"[API] Stored parallel query {i+1}: {query[:50]}...")
+        
+        # Step 7: Execute research workflow
+        print("[API] Step 7: Executing research workflow...")
+        workflow = DynamicTICResearchWorkflow(domain_metadata_objects)
+        result = await workflow.route_research_request(latest_user_message, recent_messages)
+        
+        # Print the workflow output as requested
+        print("="*80)
+        print("RESEARCH WORKFLOW OUTPUT:")
+        print("="*80)
+        print(json.dumps(result, indent=2, default=str))
+        print("="*80)
         
         if result is None:
             raise HTTPException(
@@ -35,10 +131,31 @@ async def start_research(request: ResearchRequest):
                 detail="Research failed - router timeout, no tool selected, or unknown tool"
             )
         
-        print("[API] /research result:", result)
+        # Step 8: Update query_logs with search results
+        print("[API] Step 8: Updating query logs with search results...")
+        search_results = result.get("search_results", [])
+        for i, search_result in enumerate(search_results):
+            if i < len(query_log_ids):
+                await db_service.update_query_log(
+                    query_id=query_log_ids[i],
+                    results=search_result.get("result", ""),
+                    citations=search_result.get("citations", []),
+                    status="completed"
+                )
+                print(f"[API] Updated query log {i+1} with search results")
         
-        # Generate AI summary of the research results
-        openai_service = OpenAIService()
+        # Step 9: Store assistant message with research results
+        print("[API] Step 9: Storing assistant message...")
+        assistant_content = result.get("summary", f"Research completed for: {latest_user_message}")
+        await db_service.store_message(
+            session_id=session_id,
+            role="assistant",
+            content=assistant_content
+        )
+        print("[API] Assistant message stored")
+        
+        # Step 10: Generate AI summary and return results
+        print("[API] Step 10: Generating AI summary...")
         summary = await openai_service.generate_research_summary(result)
         
         # Create summary response
@@ -60,6 +177,87 @@ async def start_research(request: ResearchRequest):
     except Exception as e:
         print(f"❌ Unhandled error in /research endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+async def call_rag_api(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Call external RAG API with conversation history"""
+    try:
+        # Prepare conversation history as text
+        conversation_text = "\n".join([
+            f"{msg['role']}: {msg['content']}" 
+            for msg in messages
+        ])
+        
+        # Prepare request payload for the new FastGPT endpoint
+        payload = {
+            "stream": False,
+            "details": False,
+            "chatId": "test",
+            "variables": {
+                "query": conversation_text
+            }
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer fastgpt-gfpB42VPJmmJVR4QENoVR7kg3vnyKZV1OavJSNobw86ncLmUSRVoGv"
+        }
+        
+        # TODO: Uncomment when ready to make actual API call
+        # async with aiohttp.ClientSession() as session:
+        #     async with session.post(
+        #         "https://fastgpt.mangrovesai.com/api/v1/chat/completions?appId=6862aa378829be5788710a6a",
+        #         json=payload,
+        #         headers=headers
+        #     ) as response:
+        #         if response.status != 200:
+        #             raise Exception(f"RAG API error: {response.status}")
+        #         data = await response.json()
+        #         
+        #         # Extract domain_metadata from responseData[3].pluginOutput.domain_metadata
+        #         try:
+        #             response_data = data.get("responseData", [])
+        #             if len(response_data) > 3:
+        #                 plugin_output = response_data[3].get("pluginOutput", {})
+        #                 domain_metadata = plugin_output.get("domain_metadata", [])
+        #                 print(f"[API] Extracted {len(domain_metadata)} domain metadata items from RAG API")
+        #                 return domain_metadata
+        #             else:
+        #                 print("[API] Warning: responseData array too short, using fallback")
+        #                 return []
+        #         except Exception as e:
+        #             print(f"[API] Error extracting domain_metadata: {str(e)}")
+        #             return []
+        
+        # Placeholder response with the domain metadata you provided
+        print("[API] Using placeholder domain metadata (RAG API call commented out)")
+        return [
+            {
+                "name": "Responsible Sport Initiative",
+                "homepage": "https://wfsgi.org/",
+                "domain": "wfsgi.org",
+                "region": "Global",
+                "org_type": "Inter-Governmental",
+                "aliases": ["RSI"],
+                "industry_tags": ["ConsumerGoods"],
+                "semantic_profile": "The Responsible Sport Initiative (RSI), part of the World Federation of the Sporting Goods Industry, aims to elevate corporate social responsibility within the sporting goods sector...",
+                "boost_keywords": ["sporting goods sustainability", "Responsible Sport Initiative standards", "ethical compliance in sports supply"]
+            },
+            {
+                "name": "Responsible Business Alliance (RBA)",
+                "homepage": "https://www.responsiblebusiness.org",
+                "domain": "responsiblebusiness.org",
+                "region": "Global",
+                "org_type": "NGO",
+                "aliases": ["RBA", "Electronic Industry Citizenship Coalition"],
+                "industry_tags": ["Electronics", "ConsumerGoods"],
+                "semantic_profile": "The Responsible Business Alliance (RBA), originally founded as the Electronic Industry Citizenship Coalition, is the world's largest industry coalition dedicated to corporate social responsibility in global supply chains...",
+                "boost_keywords": ["RBA Code of Conduct", "global supply chain ethics", "electronics industry responsibility"]
+            }
+        ]
+    except Exception as e:
+        print(f"❌ Error calling RAG API: {str(e)}")
+        raise
 
 
 @router.post("/research/stream")

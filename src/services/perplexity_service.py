@@ -26,7 +26,7 @@ class PerplexityService:
     async def search(self, query: str, domains: Optional[List[str]] = None, 
                     prompt: Optional[str] = None, use_structured_output: bool = False) -> Dict[str, Any]:
         """Async Perplexity search using aiohttp with optional domain filtering, custom prompt, and structured output"""
-        print("[PERPLEXITY SERVICE] search called with:", query, domains, prompt, use_structured_output)
+        # print("[PERPLEXITY SERVICE] search called with:", query, domains, prompt, use_structured_output)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
