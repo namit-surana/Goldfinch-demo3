@@ -92,32 +92,30 @@ class DatabaseService:
     # SESSION OPERATIONS
     # =============================================================================
     
-    async def create_session(self, user_id: str, title: str = None, metadata: Dict = None) -> Dict[str, Any]:
+    async def create_session(self, user_id: str, session_name: str = None, starred: bool = False, metadata: Dict = None) -> Dict[str, Any]:
         """Create a new chat session"""
         try:
             async with self.get_session() as session:
                 session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{user_id[:8]}"
-                
                 query = text("""
-                    INSERT INTO sessions (session_id, user_id, title, created_at, updated_at)
-                    VALUES (:session_id, :user_id, :title, NOW(), NOW())
-                    RETURNING session_id, user_id, title, created_at
+                    INSERT INTO sessions (session_id, user_id, session_name, created_at, updated_at, is_active, message_count, starred)
+                    VALUES (:session_id, :user_id, :session_name, NOW(), NOW(), true, 0, :starred)
+                    RETURNING session_id, user_id, session_name, created_at, starred
                 """)
-                
                 result = await session.execute(query, {
                     "session_id": session_id,
                     "user_id": user_id,
-                    "title": title or "New Session"
+                    "session_name": session_name or "New Session",
+                    "starred": starred
                 })
-                
                 row = result.fetchone()
                 return {
                     "session_id": row.session_id,
                     "user_id": row.user_id,
-                    "title": row.title,
-                    "created_at": row.created_at.isoformat()
+                    "session_name": row.session_name,
+                    "created_at": row.created_at.isoformat(),
+                    "starred": row.starred
                 }
-                
         except Exception as e:
             logger.error(f"Failed to create session: {e}")
             raise
@@ -127,27 +125,25 @@ class DatabaseService:
         try:
             async with self.get_session() as session:
                 query = text("""
-                    SELECT session_id, user_id, title, created_at, updated_at, 
-                           is_active, message_count
+                    SELECT session_id, user_id, session_name, created_at, updated_at, 
+                           is_active, message_count, starred
                     FROM sessions 
                     WHERE session_id = :session_id
                 """)
-                
                 result = await session.execute(query, {"session_id": session_id})
                 row = result.fetchone()
-                
                 if row:
                     return {
                         "session_id": row.session_id,
                         "user_id": row.user_id,
-                        "title": row.title,
+                        "session_name": row.session_name,
                         "created_at": row.created_at.isoformat(),
-                        "updated_at": row.updated_at.isoformat(),
+                        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                         "is_active": row.is_active,
-                        "message_count": row.message_count
+                        "message_count": row.message_count,
+                        "starred": row.starred
                     }
                 return None
-                
         except Exception as e:
             logger.error(f"Failed to get session: {e}")
             raise
@@ -156,29 +152,22 @@ class DatabaseService:
         """Update session"""
         try:
             async with self.get_session() as session:
-                # Build dynamic update query
                 set_clauses = []
                 params = {"session_id": session_id}
-                
                 for key, value in updates.items():
-                    if key in ["title", "is_active"]:
+                    if key in ["session_name", "is_active", "starred"]:
                         set_clauses.append(f"{key} = :{key}")
                         params[key] = value
-                
                 if not set_clauses:
                     return False
-                
                 set_clauses.append("updated_at = NOW()")
-                
                 query = text(f"""
                     UPDATE sessions 
                     SET {', '.join(set_clauses)}
                     WHERE session_id = :session_id
                 """)
-                
                 result = await session.execute(query, params)
                 return result.rowcount > 0
-                
         except Exception as e:
             logger.error(f"Failed to update session: {e}")
             raise
@@ -188,32 +177,30 @@ class DatabaseService:
         try:
             async with self.get_session() as session:
                 query = text("""
-                    SELECT session_id, title, created_at, updated_at, 
-                           is_active, message_count
+                    SELECT session_id, session_name, created_at, updated_at, 
+                           is_active, message_count, starred
                     FROM sessions 
                     WHERE user_id = :user_id
                     ORDER BY updated_at DESC
                     LIMIT :limit OFFSET :offset
                 """)
-                
-                result = await session.execute(query, {
+                result = await session.execute({
                     "user_id": user_id,
                     "limit": limit,
                     "offset": offset
                 })
-                
                 return [
                     {
                         "session_id": row.session_id,
-                        "title": row.title,
+                        "session_name": row.session_name,
                         "created_at": row.created_at.isoformat(),
-                        "updated_at": row.updated_at.isoformat(),
+                        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                         "is_active": row.is_active,
-                        "message_count": row.message_count
+                        "message_count": row.message_count,
+                        "starred": row.starred
                     }
                     for row in result.fetchall()
                 ]
-                
         except Exception as e:
             logger.error(f"Failed to get user sessions: {e}")
             raise
@@ -223,11 +210,10 @@ class DatabaseService:
     # =============================================================================
     
     async def store_message(self, session_id: str, role: str, content: str, 
-                          message_order: int = None, metadata: Dict = None, reply_to: str = None) -> Dict[str, Any]:
+                          message_order: int = None, metadata: Dict = None, reply_to: str = None, type: str = None) -> Dict[str, Any]:
         """Store a chat message"""
         try:
             async with self.get_session() as session:
-                # Get next message order if not provided
                 if message_order is None:
                     order_query = text("""
                         SELECT COALESCE(MAX(message_order), 0) + 1
@@ -236,35 +222,29 @@ class DatabaseService:
                     """)
                     result = await session.execute(order_query, {"session_id": session_id})
                     message_order = result.scalar()
-                
                 message_id = f"msg_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session_id[:8]}"
-                
                 query = text("""
                     INSERT INTO chat_messages (message_id, session_id, role, content, 
-                                             message_order, timestamp, reply_to)
+                                             message_order, timestamp, reply_to, type)
                     VALUES (:message_id, :session_id, :role, :content, 
-                           :message_order, NOW(), :reply_to)
-                    RETURNING message_id, session_id, role, content, message_order, timestamp, reply_to
+                           :message_order, NOW(), :reply_to, :type)
+                    RETURNING message_id, session_id, role, content, message_order, timestamp, reply_to, type
                 """)
-                
                 result = await session.execute(query, {
                     "message_id": message_id,
                     "session_id": session_id,
                     "role": role,
                     "content": content,
                     "message_order": message_order,
-                    "reply_to": reply_to
+                    "reply_to": reply_to,
+                    "type": type
                 })
-                
                 row = result.fetchone()
-                
-                # Update session message count
                 await session.execute(text("""
                     UPDATE sessions 
                     SET message_count = message_count + 1, updated_at = NOW()
                     WHERE session_id = :session_id
                 """), {"session_id": session_id})
-                
                 return {
                     "message_id": row.message_id,
                     "session_id": row.session_id,
@@ -272,9 +252,9 @@ class DatabaseService:
                     "content": row.content,
                     "message_order": row.message_order,
                     "timestamp": row.timestamp.isoformat(),
-                    "reply_to": row.reply_to
+                    "reply_to": row.reply_to,
+                    "type": row.type
                 }
-                
         except Exception as e:
             logger.error(f"Failed to store message: {e}")
             raise
@@ -290,7 +270,7 @@ class DatabaseService:
                 
                 query = text(f"""
                     SELECT message_id, role, content, message_order, timestamp, 
-                           is_summarized
+                           is_summarized, reply_to, type
                     FROM chat_messages 
                     {where_clause}
                     ORDER BY message_order ASC
@@ -310,7 +290,9 @@ class DatabaseService:
                         "content": row.content,
                         "message_order": row.message_order,
                         "timestamp": row.timestamp.isoformat(),
-                        "is_summarized": row.is_summarized
+                        "is_summarized": row.is_summarized,
+                        "reply_to": row.reply_to,
+                        "type": row.type
                     }
                     for row in result.fetchall()
                 ]
@@ -324,7 +306,7 @@ class DatabaseService:
         try:
             async with self.get_session() as session:
                 query = text("""
-                    SELECT message_id, role, content, message_order, timestamp
+                    SELECT message_id, role, content, message_order, timestamp, reply_to, type
                     FROM chat_messages 
                     WHERE session_id = :session_id AND is_summarized = false
                     ORDER BY message_order DESC
@@ -343,7 +325,9 @@ class DatabaseService:
                         "role": row.role,
                         "content": row.content,
                         "message_order": row.message_order,
-                        "timestamp": row.timestamp.isoformat()
+                        "timestamp": row.timestamp.isoformat(),
+                        "reply_to": row.reply_to,
+                        "type": row.type
                     }
                     for row in result.fetchall()
                 ]
@@ -555,11 +539,11 @@ class DatabaseService:
         try:
             async with self.get_session() as session:
                 query = text("""
-                    SELECT query_id, query_text, query_type, query_order,
+                    SELECT query_id, query_text, query_type, websites,
                            results, citations, status, timestamp
                     FROM query_logs 
                     WHERE request_id = :request_id
-                    ORDER BY query_order ASC
+                    ORDER BY timestamp ASC
                 """)
                 
                 result = await session.execute(query, {"request_id": request_id})
@@ -569,7 +553,7 @@ class DatabaseService:
                         "query_id": row.query_id,
                         "query_text": row.query_text,
                         "query_type": row.query_type,
-                        "query_order": row.query_order,
+                        "websites": row.websites,
                         "results": row.results,
                         "citations": row.citations,
                         "status": row.status,

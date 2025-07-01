@@ -19,17 +19,20 @@ db_router = APIRouter(prefix="/db", tags=["database"])
 
 class CreateSessionRequest(BaseModel):
     user_id: str = Field(..., description="User identifier")
-    title: Optional[str] = Field(None, description="Session title")
+    session_name: Optional[str] = Field(None, description="Session name")
 
 class UpdateSessionRequest(BaseModel):
-    title: Optional[str] = None
+    session_name: Optional[str] = None
     is_active: Optional[bool] = None
+    starred: Optional[bool] = None
 
 class StoreMessageRequest(BaseModel):
     session_id: str = Field(..., description="Session identifier")
     role: str = Field(..., description="Message role (user/assistant/system)")
     content: str = Field(..., description="Message content")
     message_order: Optional[int] = Field(None, description="Message order")
+    reply_to: Optional[str] = Field(None, description="Message ID this message replies to")
+    type: Optional[str] = Field(None, description="Message type")
 
 class StoreResearchRequest(BaseModel):
     session_id: str = Field(..., description="Session identifier")
@@ -64,7 +67,7 @@ async def create_session(
     try:
         session_data = await db_service.create_session(
             user_id=request.user_id,
-            title=request.title
+            session_name=request.session_name
         )
         return {
             "success": True,
@@ -103,10 +106,12 @@ async def update_session(
     """Update session"""
     try:
         updates = {}
-        if request.title is not None:
-            updates["title"] = request.title
+        if request.session_name is not None:
+            updates["session_name"] = request.session_name
         if request.is_active is not None:
             updates["is_active"] = request.is_active
+        if request.starred is not None:
+            updates["starred"] = request.starred
         
         if not updates:
             raise HTTPException(status_code=400, detail="No valid updates provided")
@@ -157,7 +162,9 @@ async def store_message(
             session_id=request.session_id,
             role=request.role,
             content=request.content,
-            message_order=request.message_order
+            message_order=request.message_order,
+            reply_to=request.reply_to,
+            type=request.type
         )
         return {
             "success": True,

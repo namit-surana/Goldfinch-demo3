@@ -1,5 +1,5 @@
 """
-Database models for Goldfinch Research API
+Database models for Goldfinch Research API (updated to match latest schema)
 """
 
 from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, Float, JSON, ForeignKey
@@ -20,11 +20,24 @@ class User(Base):
     
     user_id = Column(String, primary_key=True, default=generate_uuid)
     email = Column(String, unique=True, nullable=False)
-    name = Column(String, nullable=False)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=True)
+    company_name = Column(String, nullable=True)
+    employee_id = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    country_code = Column(String, nullable=True)
+    geographic_location = Column(String, nullable=True)
+    email_verified = Column(Boolean, nullable=True)
+    reset_code = Column(String, nullable=True)
+    reset_code_expiry = Column(DateTime, nullable=True)
+    last_modified_at = Column(DateTime, nullable=True)
+    industry_field = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_active = Column(DateTime(timezone=True), onupdate=func.now())
     preferences = Column(JSON, default={})
-    default_domain_set_id = Column(String, ForeignKey("domain_sets.domain_set_id"), nullable=True)
+    hashed_password = Column(String, nullable=True)
+    id_token = Column(String, nullable=True)
+    token_version = Column(Integer, nullable=True)
     
     # Relationships
     sessions = relationship("Session", back_populates="user")
@@ -37,13 +50,14 @@ class Session(Base):
     
     session_id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
-    title = Column(String, nullable=True)
+    session_name = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
-    message_count = Column(Integer, default=0)
     current_memory_id = Column(String, ForeignKey("conversation_memory.memory_id"), nullable=True)
+    message_count = Column(Integer, default=0)
+    starred = Column(Boolean, default=False)
     
     # Relationships
     user = relationship("User", back_populates="sessions")
@@ -62,12 +76,13 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     message_order = Column(Integer, nullable=True)
-    reply_to = Column(String, nullable=True)
     is_summarized = Column(Boolean, default=False)
+    reply_to = Column(String, ForeignKey("chat_messages.message_id"), nullable=True)
+    type = Column(String, nullable=True)
     
     # Relationships
     session = relationship("Session", back_populates="chat_messages")
-    research_requests = relationship("ResearchRequest", back_populates="triggering_message")
+    research_requests = relationship("ResearchRequest", back_populates="triggering_message", foreign_keys='ResearchRequest.message_id')
 
 class ConversationMemory(Base):
     """Conversation memory table"""
@@ -99,7 +114,7 @@ class ResearchRequest(Base):
     
     # Relationships
     session = relationship("Session", back_populates="research_requests")
-    triggering_message = relationship("ChatMessage", back_populates="research_requests")
+    triggering_message = relationship("ChatMessage", back_populates="research_requests", foreign_keys=[message_id])
     query_logs = relationship("QueryLog", back_populates="research_request")
 
 class QueryLog(Base):
@@ -111,7 +126,6 @@ class QueryLog(Base):
     query_text = Column(Text, nullable=False)
     query_type = Column(String, nullable=False)
     websites = Column(JSON, default=[])
-    time_taken = Column(Float, nullable=True)
     results = Column(Text, nullable=True)
     citations = Column(JSON, nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
