@@ -13,6 +13,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 from contextlib import asynccontextmanager
 import logging
+import json  # Ensure json is imported
+import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -362,6 +364,9 @@ class DatabaseService:
             async with self.get_session() as session:
                 request_id = f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session_id[:8]}"
                 
+                # Serialize domain_metadata to JSON string for Postgres jsonb
+                domain_metadata_json = json.dumps(domain_metadata) if domain_metadata is not None else '{}'
+                
                 query = text("""
                     INSERT INTO research_requests (request_id, session_id, message_id,
                                                  enhanced_query, workflow_type, 
@@ -377,7 +382,7 @@ class DatabaseService:
                     "message_id": message_id,
                     "research_question": research_question,
                     "workflow_type": workflow_type,
-                    "domain_metadata": domain_metadata or {}
+                    "domain_metadata": domain_metadata_json  # Pass as JSON string
                 })
                 
                 return result.scalar()
@@ -479,6 +484,111 @@ class DatabaseService:
                 
         except Exception as e:
             logger.error(f"Failed to get research history: {e}")
+            raise
+    
+    # =============================================================================
+    # QUERY LOGS OPERATIONS
+    # =============================================================================
+    
+    async def store_query_log(self, request_id: str, query_text: str, query_type: str, websites: List[str] = None) -> Dict[str, Any]:
+        """Store a query log entry"""
+        try:
+            async with self.get_session() as session:
+                query_id = f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{request_id[:8]}_{uuid.uuid4().hex[:6]}"
+                
+                # Serialize websites to JSON string
+                websites_json = json.dumps(websites or [])
+                
+                query = text("""
+                    INSERT INTO query_logs (query_id, request_id, query_text, query_type,
+                                          websites, timestamp, status)
+                    VALUES (:query_id, :request_id, :query_text, :query_type,
+                           :websites, NOW(), 'pending')
+                    RETURNING query_id, request_id, query_text, query_type, timestamp
+                """)
+                
+                result = await session.execute(query, {
+                    "query_id": query_id,
+                    "request_id": request_id,
+                    "query_text": query_text,
+                    "query_type": query_type,
+                    "websites": websites_json
+                })
+                
+                row = result.fetchone()
+                return {
+                    "query_id": row.query_id,
+                    "request_id": row.request_id,
+                    "query_text": row.query_text,
+                    "query_type": row.query_type,
+                    "timestamp": row.timestamp.isoformat()
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to store query log: {e}")
+            raise
+    
+    async def update_query_log(self, query_id: str, results: str = None, 
+                             citations: List[Dict] = None, status: str = "completed",
+                             time_taken: float = None) -> bool:
+        """Update query log with results"""
+        try:
+            async with self.get_session() as session:
+                # Serialize citations to JSON string
+                citations_json = json.dumps(citations or [])
+                
+                query = text("""
+                    UPDATE query_logs 
+                    SET results = :results, citations = :citations, status = :status,
+                        time_taken = :time_taken
+                    WHERE query_id = :query_id
+                """)
+                
+                result = await session.execute(query, {
+                    "query_id": query_id,
+                    "results": results,
+                    "citations": citations_json,
+                    "status": status,
+                    "time_taken": time_taken
+                })
+                
+                return result.rowcount > 0
+                
+        except Exception as e:
+            logger.error(f"Failed to update query log: {e}")
+            raise
+    
+    async def get_query_logs(self, request_id: str) -> List[Dict[str, Any]]:
+        """Get all query logs for a research request"""
+        try:
+            async with self.get_session() as session:
+                query = text("""
+                    SELECT query_id, query_text, query_type, query_order,
+                           results, citations, time_taken, status, timestamp
+                    FROM query_logs 
+                    WHERE request_id = :request_id
+                    ORDER BY query_order ASC
+                """)
+                
+                result = await session.execute(query, {"request_id": request_id})
+                
+                return [
+                    {
+                        "query_id": row.query_id,
+                        "query_text": row.query_text,
+                        "query_type": row.query_type,
+                        "query_order": row.query_order,
+                        "results": row.results,
+                        "citations": row.citations,
+                        "time_taken": row.time_taken,
+                        "status": row.status,
+                        "timestamp": row.timestamp.isoformat()
+                    }
+                    for row in result.fetchall()
+                ]
+                
+        except Exception as e:
+            logger.error(f"Failed to get query logs: {e}")
             raise
     
     # =============================================================================

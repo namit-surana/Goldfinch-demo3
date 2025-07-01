@@ -21,7 +21,7 @@ class TICResearchWorkflow:
     
     async def route_research_request(self, research_question: str, chat_history: Optional[List[Dict]] = None) -> Optional[Dict[str, Any]]:
         """Route research request to appropriate workflow based on router decision"""
-        print("[WORKFLOW] route_research_request called with:", research_question, chat_history)
+        # print("[WORKFLOW] route_research_request called with:", research_question, chat_history)
         try:
             # Get router decision with chat history context
             router_answer = await self.openai_service.get_router_decision(research_question, chat_history)

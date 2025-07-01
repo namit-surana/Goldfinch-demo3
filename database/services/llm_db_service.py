@@ -30,7 +30,7 @@ class LLMDatabaseService:
             
             # Get recent messages from database
             recent_messages = await self.db_service.get_recent_messages(session_id, 10)
-            
+            print(recent_messages)
             # Get research history
             research_history = await self.db_service.get_research_history(session_id, 5)
             

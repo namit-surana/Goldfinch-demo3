@@ -23,12 +23,13 @@ class OpenAIService:
         """Get router decision for which workflow to use"""
         from ..config import ROUTER_SYSTEM_PROMPT
         
-        print("[OPENAI SERVICE] get_router_decision called with:", research_question, chat_history)
+      
         
         full_message = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}]
-        full_message.extend(chat_history or [])
         
-        print("[OPENAI SERVICE] full_message:", full_message)
+        full_message.extend(chat_history or [])
+        # print(full_message)
+       
         
         try:
             # Add timeout for router decision (15 seconds)
@@ -46,7 +47,7 @@ class OpenAIService:
             # Execute with 15-second timeout
             response = await asyncio.wait_for(make_openai_call(), timeout=15.0)
             
-            print("[OPENAI SERVICE] router response:", response)
+            # print("[OPENAI SERVICE] router response:", response)
             
             router_time = time.time() - router_start
             
@@ -94,7 +95,7 @@ class OpenAIService:
                 ],
                 text_format=ResearchQueries
             )
-            print("[OPENAI SERVICE] generate_research_queries response:", response)
+            # print("[OPENAI SERVICE] generate_research_queries response:", response)
             queries = response.output_parsed.queries
             print(f"✅ Generated {len(queries)} research queries:")
             for i, query in enumerate(queries, 1):
