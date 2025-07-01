@@ -113,36 +113,15 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             })
         return websites
     
-    async def execute_workflow(self, router_decision: str, research_question: str, queries: List[str]) -> Dict[str, Any]:
+
+    async def execute_workflow(self, router_decision: str, research_question: str, search_tasks: List[str]) -> Dict[str, Any]:
         """Execute research workflow with dynamic domain metadata"""
         print_separator("📋 EXECUTING {0} WORKFLOW".format(router_decision))
         workflow_start = time.time()
         
         # Debug: Print the queries to be mapped
-        print(f"[DEBUG] Queries to be mapped ({len(queries)}): {queries}")
         
         # Phase 1: Map queries to relevant websites
-        query_mappings = await self.openai_service.map_queries_to_websites(queries, self.dynamic_websites)
-        
-        # Phase 2: Prepare search tasks
-        search_tasks = []
-        
-        # Add general web searches for all queries
-        for query in queries:
-            search_tasks.append({
-                "type": "general_web",
-                "query": query,
-                "websites": []
-            })
-        
-        # Add domain-filtered searches for mapped queries
-        for mapping in query_mappings:
-            if mapping["websites"]:
-                search_tasks.append({
-                    "type": "domain_filtered",
-                    "query": mapping["query"],
-                    "websites": mapping["websites"]
-                })
         
         # Phase 3: Execute all searches in parallel
         print_separator("Executing Parallel Searches")
@@ -217,7 +196,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
             "message": "Research completed successfully.",
             "research_question": research_question,
             "workflow_type": router_decision,
-            "query_mappings": query_mappings,
+
             "execution_summary": {
                 "total_time_seconds": total_time,
                 "total_searches": len(search_tasks),

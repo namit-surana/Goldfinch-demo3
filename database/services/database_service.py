@@ -490,7 +490,7 @@ class DatabaseService:
     # QUERY LOGS OPERATIONS
     # =============================================================================
     
-    async def store_query_log(self, request_id: str, query_text: str, query_type: str, websites: List[str] = None) -> Dict[str, Any]:
+    async def store_query_log(self, request_id: str, query_text: str, query_type: str, websites: List[Dict] = None) -> Dict[str, Any]:
         """Store a query log entry"""
         try:
             async with self.get_session() as session:
@@ -504,7 +504,7 @@ class DatabaseService:
                                           websites, timestamp, status)
                     VALUES (:query_id, :request_id, :query_text, :query_type,
                            :websites, NOW(), 'pending')
-                    RETURNING query_id, request_id, query_text, query_type, timestamp
+                    RETURNING query_id
                 """)
                 
                 result = await session.execute(query, {
@@ -514,15 +514,8 @@ class DatabaseService:
                     "query_type": query_type,
                     "websites": websites_json
                 })
-                
-                row = result.fetchone()
-                return {
-                    "query_id": row.query_id,
-                    "request_id": row.request_id,
-                    "query_text": row.query_text,
-                    "query_type": row.query_type,
-                    "timestamp": row.timestamp.isoformat()
-                }
+
+                return result.fetchone()[0]
                 
         except Exception as e:
             logger.error(f"Failed to store query log: {e}")

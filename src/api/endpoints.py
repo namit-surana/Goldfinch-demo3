@@ -30,9 +30,10 @@ async def start_research(request: dict):
     
     try:
         # Step 1: Get the last 10 messages from the database
-        print("[API] Step 1: Getting last 10 messages...")
+        print("[API] Step 1: Getting last 7 messages...")
         db_service = get_database_service()
-        recent_messages = await db_service.get_recent_messages(session_id, 10)
+        recent_messages = await db_service.get_recent_messages(session_id, 7)
+        recent_messages = [{"role": i["role"], "content": i["content"]} for i in recent_messages]
         print(f"[API] Retrieved {len(recent_messages)} recent messages")
         
         if not recent_messages:
@@ -66,18 +67,18 @@ async def start_research(request: dict):
         
         # Convert domain metadata dictionaries to DomainMetadata objects
         domain_metadata_objects = []
-        for domain_dict in domain_metadata:
-            try:
-                domain_obj = DomainMetadata(**domain_dict)
-                domain_metadata_objects.append(domain_obj)
-            except Exception as e:
-                print(f"[API] Warning: Could not convert domain metadata {domain_dict.get('name', 'unknown')}: {str(e)}")
+        # for domain_dict in domain_metadata:
+        #     try:
+        #         domain_obj = DomainMetadata(**domain_dict)
+        #         domain_metadata_objects.append(domain_obj)
+        #     except Exception as e:
+        #         print(f"[API] Warning: Could not convert domain metadata {domain_dict.get('name', 'unknown')}: {str(e)}")
         
         # print(f"[API] Converted {len(domain_metadata_objects)} domain metadata objects")
         
         # Get router decision and enhanced query
         openai_service = OpenAIService()
-        router_answer = await openai_service.get_router_decision(latest_user_message, recent_messages)
+        router_answer = await openai_service.get_router_decision(recent_messages)
         
         if not router_answer:
             raise HTTPException(status_code=500, detail="Router decision failed")
@@ -99,31 +100,33 @@ async def start_research(request: dict):
         
         # Step 6: Generate parallel queries and store in query_logs
         print("[API] Step 6: Generating parallel queries...")
-        parallel_queries = await openai_service.generate_research_queries(router_decision, enhanced_query)
+        parallel_queries = await openai_service.generate_and_map_research_queries(router_decision, enhanced_query, domain_metadata)
         print(f"[API] Generated {len(parallel_queries)} parallel queries")
+        print(parallel_queries)
+
         
         # Store each parallel query in query_logs table with status="pending"
         query_log_ids = []
         for i, query in enumerate(parallel_queries):
             query_log = await db_service.store_query_log(
                 request_id=request_id,
-                query_text=query,
-                query_type="parallel_search"
+                query_text=query["query"],
+                query_type=query["type"],
+                websites=query["websites"]
             )
-            query_log_ids.append(query_log["query_id"])
-            print(f"[API] Stored parallel query {i+1}: {query[:50]}...")
-        
+            query_log_ids.append(query_log)
+            print(f"[API] Stored parallel query {i+1}: {query_log}...")
         # Step 7: Execute research workflow
         print("[API] Step 7: Executing research workflow...")
         workflow = DynamicTICResearchWorkflow(domain_metadata_objects)
-        result = await workflow.route_research_request(latest_user_message, recent_messages)
+        result = await workflow.execute_workflow(router_decision, latest_user_message, parallel_queries)
         
         # Print the workflow output as requested
-        print("="*80)
-        print("RESEARCH WORKFLOW OUTPUT:")
-        print("="*80)
-        print(json.dumps(result, indent=2, default=str))
-        print("="*80)
+        # print("="*80)
+        # print("RESEARCH WORKFLOW OUTPUT:")
+        # print("="*80)
+        # print(json.dumps(result, indent=2, default=str))
+        # print("="*80)
         
         if result is None:
             raise HTTPException(
@@ -140,24 +143,16 @@ async def start_research(request: dict):
                     query_id=query_log_ids[i],
                     results=search_result.get("result", ""),
                     citations=search_result.get("citations", []),
-                    status="completed"
+                    status=search_result.get("status", []),
+                    time_taken=search_result.get("")
                 )
                 print(f"[API] Updated query log {i+1} with search results")
         
-        # Step 9: Store assistant message with research results
-        print("[API] Step 9: Storing assistant message...")
-        assistant_content = result.get("summary", f"Research completed for: {latest_user_message}")
-        await db_service.store_message(
-            session_id=session_id,
-            role="assistant",
-            content=assistant_content
-        )
-        print("[API] Assistant message stored")
         
         # Step 10: Generate AI summary and return results
         print("[API] Step 10: Generating AI summary...")
-        summary = await openai_service.generate_research_summary(result)
-        
+        summary = await openai_service.generate_research_summary(recent_messages, search_results)
+
         # Create summary response
         summary_response = ResearchSummaryResponse(
             request_id=result.get('request_id'),
@@ -170,8 +165,13 @@ async def start_research(request: dict):
             timestamp=result.get('timestamp'),
             processing_time=result.get('processing_time')
         )
+
+        await db_service.store_message(
+            session_id=session_id,
+            role="assistant",
+            content=summary
+        )
         
-        print("[API] /research summary response:", summary_response)
         return summary_response
 
     except Exception as e:
@@ -203,58 +203,31 @@ async def call_rag_api(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "Authorization": "Bearer fastgpt-gfpB42VPJmmJVR4QENoVR7kg3vnyKZV1OavJSNobw86ncLmUSRVoGv"
         }
         
-        # TODO: Uncomment when ready to make actual API call
-        # async with aiohttp.ClientSession() as session:
-        #     async with session.post(
-        #         "https://fastgpt.mangrovesai.com/api/v1/chat/completions?appId=6862aa378829be5788710a6a",
-        #         json=payload,
-        #         headers=headers
-        #     ) as response:
-        #         if response.status != 200:
-        #             raise Exception(f"RAG API error: {response.status}")
-        #         data = await response.json()
-        #         
-        #         # Extract domain_metadata from responseData[3].pluginOutput.domain_metadata
-        #         try:
-        #             response_data = data.get("responseData", [])
-        #             if len(response_data) > 3:
-        #                 plugin_output = response_data[3].get("pluginOutput", {})
-        #                 domain_metadata = plugin_output.get("domain_metadata", [])
-        #                 print(f"[API] Extracted {len(domain_metadata)} domain metadata items from RAG API")
-        #                 return domain_metadata
-        #             else:
-        #                 print("[API] Warning: responseData array too short, using fallback")
-        #                 return []
-        #         except Exception as e:
-        #             print(f"[API] Error extracting domain_metadata: {str(e)}")
-        #             return []
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://fastgpt.mangrovesai.com/api/v1/chat/completions?appId=6862aa378829be5788710a6a",
+                json=payload,
+                headers=headers
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"RAG API error: {response.status}")
+                data = await response.json()
+                
+                # Extract domain_metadata from responseData[3].pluginOutput.domain_metadata
+                try:
+                    response_data = data.get("responseData", [])
+                    if len(response_data) > 3:
+                        plugin_output = response_data[3].get("pluginOutput", {})
+                        domain_metadata = plugin_output.get("domain_metadata", [])
+                        print(f"[API] Extracted {len(domain_metadata)} domain metadata items from RAG API")
+                        return domain_metadata
+                    else:
+                        print("[API] Warning: responseData array too short, using fallback")
+                        return []
+                except Exception as e:
+                    print(f"[API] Error extracting domain_metadata: {str(e)}")
+                    return []
         
-        # Placeholder response with the domain metadata you provided
-        print("[API] Using placeholder domain metadata (RAG API call commented out)")
-        return [
-            {
-                "name": "Responsible Sport Initiative",
-                "homepage": "https://wfsgi.org/",
-                "domain": "wfsgi.org",
-                "region": "Global",
-                "org_type": "Inter-Governmental",
-                "aliases": ["RSI"],
-                "industry_tags": ["ConsumerGoods"],
-                "semantic_profile": "The Responsible Sport Initiative (RSI), part of the World Federation of the Sporting Goods Industry, aims to elevate corporate social responsibility within the sporting goods sector...",
-                "boost_keywords": ["sporting goods sustainability", "Responsible Sport Initiative standards", "ethical compliance in sports supply"]
-            },
-            {
-                "name": "Responsible Business Alliance (RBA)",
-                "homepage": "https://www.responsiblebusiness.org",
-                "domain": "responsiblebusiness.org",
-                "region": "Global",
-                "org_type": "NGO",
-                "aliases": ["RBA", "Electronic Industry Citizenship Coalition"],
-                "industry_tags": ["Electronics", "ConsumerGoods"],
-                "semantic_profile": "The Responsible Business Alliance (RBA), originally founded as the Electronic Industry Citizenship Coalition, is the world's largest industry coalition dedicated to corporate social responsibility in global supply chains...",
-                "boost_keywords": ["RBA Code of Conduct", "global supply chain ethics", "electronics industry responsibility"]
-            }
-        ]
     except Exception as e:
         print(f"❌ Error calling RAG API: {str(e)}")
         raise
