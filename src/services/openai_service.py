@@ -19,7 +19,7 @@ class OpenAIService:
         self.model = API_CONFIG["openai"]["model"]
         self.tools = TOOLS
     
-    async def get_router_decision(self, research_question: str, chat_history: Optional[List[Dict]] = None) -> Optional[Dict[str, str]]:
+    async def get_router_decision(self, chat_history: Optional[List[Dict]] = None) -> Optional[Dict[str, str]]:
         """Get router decision for which workflow to use"""
         from ..config import ROUTER_SYSTEM_PROMPT
         
@@ -28,7 +28,6 @@ class OpenAIService:
         full_message = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}]
         
         full_message.extend(chat_history or [])
-        # print(full_message)
        
         
         try:
@@ -71,21 +70,22 @@ class OpenAIService:
             print("🛑 Stopping due to router error.")
             return None
     
-    async def generate_research_queries(self, router_decision: str, router_query: str) -> List[str]:
+    async def generate_and_map_research_queries(self, router_decision: str, router_query: str, dynamic_websites: List[Dict]) -> List[str]:
         """Generate multiple research queries for comprehensive analysis"""
         from ..config import LIST_QUERY_GENERATION_PROMPT, SEARCH_INTERNET_QUERY_GENERATION_PROMPT
         
         print("[OPENAI SERVICE] generate_research_queries called with:", router_decision, router_query)
         
+        generated_queries = [router_query]
         try:
             if router_decision == "Provide_a_List":
                 SYSTEM_PROMPT = LIST_QUERY_GENERATION_PROMPT
             elif router_decision == "Search_the_Internet":
                 SYSTEM_PROMPT = SEARCH_INTERNET_QUERY_GENERATION_PROMPT
             else:
-                return [router_query]
+                generated_queries = [router_query]
             
-            print("[OPENAI SERVICE] SYSTEM_PROMPT:", SYSTEM_PROMPT)
+            # print("[OPENAI SERVICE] SYSTEM_PROMPT:", SYSTEM_PROMPT)
             
             response = self.client.responses.parse(
                 model=self.model,
@@ -100,17 +100,41 @@ class OpenAIService:
             print(f"✅ Generated {len(queries)} research queries:")
             for i, query in enumerate(queries, 1):
                 print(f"  {i}. {query}")
-            return queries
+            generated_queries = queries
         except Exception as e:
             print(f"❌ Error generating queries: {e}")
             # Fallback: use the original question
-            return [router_query]
+            generated_queries = [router_query]
+
+            print(f"[DEBUG] Queries to be mapped ({len(queries)}): {queries}")
+        
+        # Phase 1: Map queries to relevant websites
+        query_mappings = await self.map_queries_to_websites(generated_queries, dynamic_websites)
+        search_tasks = []
+        
+        # Add general web searches for all queries
+        for query in generated_queries:
+            search_tasks.append({
+                "type": "general_web",
+                "query": query,
+                "websites": []
+            })
+        
+        # Add domain-filtered searches for mapped queries
+        for mapping in query_mappings:
+            if mapping["websites"]:
+                search_tasks.append({
+                    "type": "domain_filtered",
+                    "query": mapping["query"],
+                    "websites": mapping["websites"]
+                })
+        return search_tasks
     
     async def map_queries_to_websites(self, generated_queries: List[str], dynamic_websites: List[Dict]) -> List[Dict[str, Any]]:
         """Map generated queries to relevant websites using OpenAI"""
         from ..config import QUERY_MAPPING_PROMPT
         
-        print("[OPENAI SERVICE] map_queries_to_websites called with:", generated_queries, dynamic_websites)
+        # print("[OPENAI SERVICE] map_queries_to_websites called with:", generated_queries, dynamic_websites)
         
         # Create rich website descriptions using all available metadata
         rich_website_descriptions = [
@@ -133,7 +157,7 @@ class OpenAIService:
 
         user_prompt = f"Research Queries: {queries}\nWebsites: {available_websites}\n"
 
-        print("[OPENAI SERVICE] user_prompt:", user_prompt)
+        # print("[OPENAI SERVICE] user_prompt:", user_prompt)
 
         try:
             response = self.client.responses.parse(
@@ -144,7 +168,7 @@ class OpenAIService:
                 ],
                 text_format=QueryMappings
             )
-            print("[OPENAI SERVICE] map_queries_to_websites response:", response)
+            # print("[OPENAI SERVICE] map_queries_to_websites response:", response)
             # Debug: Print the raw output_parsed from OpenAI
             print(f"[DEBUG] OpenAI mapping response.output_parsed: {response.output_parsed}")
             mappings = [
@@ -174,7 +198,7 @@ class OpenAIService:
             ]
             return mappings
 
-    async def generate_research_summary(self, research_results: Dict[str, Any]) -> str:
+    async def generate_research_summary(self, context: List[Dict[str, Any]], research_results: Dict[str, Any]) -> str:
         """Generate a summary of research results using OpenAI"""
         from ..config import RESEARCH_SUMMARY_SYSTEM_PROMPT
         
@@ -183,14 +207,8 @@ class OpenAIService:
         try:
             # Convert research results to a user-friendly format
             user_prompt = f"""
-Research Question: {research_results.get('research_question', 'N/A')}
-Workflow Type: {research_results.get('workflow_type', 'N/A')}
-Execution Summary: {research_results.get('execution_summary', {})}
-
-Search Results:
-{json.dumps(research_results.get('search_results', []), indent=2)}
-
-Please provide a comprehensive summary of these research findings.
+context: {context},
+answers: {research_results}
 """
             
             response = self.client.chat.completions.create(

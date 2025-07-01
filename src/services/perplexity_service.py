@@ -61,7 +61,7 @@ class PerplexityService:
             async with session.post(self.url, headers=headers, json=body) as response:
                 print("[PERPLEXITY SERVICE] HTTP response status:", response.status)
                 data = await response.json()
-                print("[PERPLEXITY SERVICE] response data:", data)
+                # print("[PERPLEXITY SERVICE] response data:", data)
                 
                 # Extract content and citations from response
                 content = data['choices'][0]['message']['content']
@@ -72,7 +72,7 @@ class PerplexityService:
                     parsed_data = json.loads(content)
                     certifications = Certifications(**parsed_data)
                     structured_content = json.dumps([cert.dict() for cert in certifications.certifications], indent=2)
-                    print("[PERPLEXITY SERVICE] structured_content:", structured_content)
+                    # print("[PERPLEXITY SERVICE] structured_content:", structured_content)
                     return {
                         "content": structured_content,
                         "citations": citations,
