@@ -1,14 +1,11 @@
-openai
-python-dotenv==1.0.0
-aiohttp
-beautifulsoup4
-lxml
+# Core dependencies
 fastapi
-uvicorn[standard]
+uvicorn
+sqlalchemy
+asyncpg>=0.28.0
+psycopg2-binary
+python-dotenv
+requests
+aiohttp
 pydantic
-python-multipart
-# Database dependencies
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.23
-alembic==1.13.1
-asyncpg==0.29.0 
+# Add any other required packages below 
