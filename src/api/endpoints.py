@@ -387,7 +387,7 @@ async def get_research_history(session_id: str, limit: int = 10):
 async def create_session(
     user_email: str = "default@example.com",
     user_name: str = "Default User",
-    title: Optional[str] = None
+    session_name: Optional[str] = None
 ):
     """Create a new chat session"""
     try:
@@ -395,7 +395,7 @@ async def create_session(
         return {
             "session_id": "placeholder_session_id",
             "user_id": "placeholder_user_id",
-            "title": title or "New Session",
+            "session_name": session_name or "New Session",
             "created_at": datetime.now().isoformat()
         }
     except Exception as e:
