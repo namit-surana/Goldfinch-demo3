@@ -223,7 +223,7 @@ class DatabaseService:
     # =============================================================================
     
     async def store_message(self, session_id: str, role: str, content: str, 
-                          message_order: int = None, metadata: Dict = None) -> Dict[str, Any]:
+                          message_order: int = None, metadata: Dict = None, reply_to: str = None) -> Dict[str, Any]:
         """Store a chat message"""
         try:
             async with self.get_session() as session:
@@ -241,10 +241,10 @@ class DatabaseService:
                 
                 query = text("""
                     INSERT INTO chat_messages (message_id, session_id, role, content, 
-                                             message_order, timestamp)
+                                             message_order, timestamp, reply_to)
                     VALUES (:message_id, :session_id, :role, :content, 
-                           :message_order, NOW())
-                    RETURNING message_id, session_id, role, content, message_order, timestamp
+                           :message_order, NOW(), :reply_to)
+                    RETURNING message_id, session_id, role, content, message_order, timestamp, reply_to
                 """)
                 
                 result = await session.execute(query, {
@@ -252,7 +252,8 @@ class DatabaseService:
                     "session_id": session_id,
                     "role": role,
                     "content": content,
-                    "message_order": message_order
+                    "message_order": message_order,
+                    "reply_to": reply_to
                 })
                 
                 row = result.fetchone()
@@ -270,7 +271,8 @@ class DatabaseService:
                     "role": row.role,
                     "content": row.content,
                     "message_order": row.message_order,
-                    "timestamp": row.timestamp.isoformat()
+                    "timestamp": row.timestamp.isoformat(),
+                    "reply_to": row.reply_to
                 }
                 
         except Exception as e:
@@ -522,8 +524,7 @@ class DatabaseService:
             raise
     
     async def update_query_log(self, query_id: str, results: str = None, 
-                             citations: List[Dict] = None, status: str = "completed",
-                             time_taken: float = None) -> bool:
+                             citations: List[Dict] = None, status: str = "completed") -> bool:
         """Update query log with results"""
         try:
             async with self.get_session() as session:
@@ -532,8 +533,7 @@ class DatabaseService:
                 
                 query = text("""
                     UPDATE query_logs 
-                    SET results = :results, citations = :citations, status = :status,
-                        time_taken = :time_taken
+                    SET results = :results, citations = :citations, status = :status
                     WHERE query_id = :query_id
                 """)
                 
@@ -541,8 +541,7 @@ class DatabaseService:
                     "query_id": query_id,
                     "results": results,
                     "citations": citations_json,
-                    "status": status,
-                    "time_taken": time_taken
+                    "status": status
                 })
                 
                 return result.rowcount > 0
@@ -557,7 +556,7 @@ class DatabaseService:
             async with self.get_session() as session:
                 query = text("""
                     SELECT query_id, query_text, query_type, query_order,
-                           results, citations, time_taken, status, timestamp
+                           results, citations, status, timestamp
                     FROM query_logs 
                     WHERE request_id = :request_id
                     ORDER BY query_order ASC
@@ -573,7 +572,6 @@ class DatabaseService:
                         "query_order": row.query_order,
                         "results": row.results,
                         "citations": row.citations,
-                        "time_taken": row.time_taken,
                         "status": row.status,
                         "timestamp": row.timestamp.isoformat()
                     }

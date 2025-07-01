@@ -13,6 +13,7 @@ from ..models import ResearchRequest, ResearchResultResponse, ResearchSummaryRes
 from ..core import DynamicTICResearchWorkflow
 from ..services.openai_service import OpenAIService
 from database.services import get_llm_db_service, get_database_service
+import time
 
 router = APIRouter()
 
@@ -78,8 +79,9 @@ async def start_research(request: dict):
         
         # Get router decision and enhanced query
         openai_service = OpenAIService()
+        router_start = time.time()
         router_answer = await openai_service.get_router_decision(recent_messages)
-        
+        router_elapsed = time.time() - router_start
         if not router_answer:
             raise HTTPException(status_code=500, detail="Router decision failed")
             
@@ -100,79 +102,109 @@ async def start_research(request: dict):
         
         # Step 6: Generate parallel queries and store in query_logs
         print("[API] Step 6: Generating parallel queries...")
-        parallel_queries = await openai_service.generate_and_map_research_queries(router_decision, enhanced_query, domain_metadata)
-        print(f"[API] Generated {len(parallel_queries)} parallel queries")
-        print(parallel_queries)
-
-        
-        # Store each parallel query in query_logs table with status="pending"
-        query_log_ids = []
-        for i, query in enumerate(parallel_queries):
-            query_log = await db_service.store_query_log(
+        if router_decision == "direct_response":
+            # No queries to generate, just use the direct LLM response
+            summary = enhanced_query  # The direct LLM response is in enhanced_query
+            assistant_message = await db_service.store_message(
+                session_id=session_id,
+                role="assistant",
+                content=summary,
+                reply_to=recent_messages[-1]["message_id"]
+            )
+            # Optionally update research request status to completed
+            await db_service.update_research_request(
                 request_id=request_id,
-                query_text=query["query"],
-                query_type=query["type"],
-                websites=query["websites"]
+                updates={
+                    "status": "completed",
+                    "processing_time": router_elapsed
+                }
             )
-            query_log_ids.append(query_log)
-            print(f"[API] Stored parallel query {i+1}: {query_log}...")
-        # Step 7: Execute research workflow
-        print("[API] Step 7: Executing research workflow...")
-        workflow = DynamicTICResearchWorkflow(domain_metadata_objects)
-        result = await workflow.execute_workflow(router_decision, latest_user_message, parallel_queries)
-        
-        # Print the workflow output as requested
-        # print("="*80)
-        # print("RESEARCH WORKFLOW OUTPUT:")
-        # print("="*80)
-        # print(json.dumps(result, indent=2, default=str))
-        # print("="*80)
-        
-        if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Research failed - router timeout, no tool selected, or unknown tool"
-            )
-        
-        # Step 8: Update query_logs with search results
-        print("[API] Step 8: Updating query logs with search results...")
-        search_results = result.get("search_results", [])
-        for i, search_result in enumerate(search_results):
-            if i < len(query_log_ids):
-                await db_service.update_query_log(
-                    query_id=query_log_ids[i],
-                    results=search_result.get("result", ""),
-                    citations=search_result.get("citations", []),
-                    status=search_result.get("status", []),
-                    time_taken=search_result.get("")
+            return {
+                "success": True,
+                "user_message": recent_messages[-1],
+                "assistant_message": assistant_message,
+                "research_summary": {
+                    "request_id": request_id,
+                    "status": "completed",
+                    "message": "Direct LLM response provided.",
+                    "research_question": latest_user_message,
+                    "workflow_type": "direct_response",
+                    "execution_summary": {},
+                    "search_results": [],
+                    "timestamp": datetime.now().isoformat(),
+                    "processing_time": router_elapsed
+                },
+                "summary": summary
+            }
+        else:
+            parallel_queries = await openai_service.generate_and_map_research_queries(router_decision, enhanced_query, domain_metadata)
+            query_log_ids = []
+            for i, query in enumerate(parallel_queries):
+                query_log = await db_service.store_query_log(
+                    request_id=request_id,
+                    query_text=query["query"],
+                    query_type=query["type"],
+                    websites=query["websites"]
                 )
-                print(f"[API] Updated query log {i+1} with search results")
-        
-        
-        # Step 10: Generate AI summary and return results
-        print("[API] Step 10: Generating AI summary...")
-        summary = await openai_service.generate_research_summary(recent_messages, search_results)
+                query_log_ids.append(query_log)
 
-        # Create summary response
-        summary_response = ResearchSummaryResponse(
-            request_id=result.get('request_id'),
-            status=result.get('status'),
-            message=result.get('message'),
-            research_question=result.get('research_question'),
-            workflow_type=result.get('workflow_type'),
-            execution_summary=result.get('execution_summary'),
-            summary=summary,
-            timestamp=result.get('timestamp'),
-            processing_time=result.get('processing_time')
-        )
+            # Step 7: Execute research workflow
+            print("[API] Step 7: Executing research workflow...")
+            workflow = DynamicTICResearchWorkflow(domain_metadata_objects)
+            result = await workflow.execute_workflow(router_decision, latest_user_message, parallel_queries)
+            
+            # Print the workflow output as requested
+            # print("="*80)
+            # print("RESEARCH WORKFLOW OUTPUT:")
+            # print("="*80)
+            # print(json.dumps(result, indent=2, default=str))
+            # print("="*80)
+            
+            if result is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Research failed - router timeout, no tool selected, or unknown tool"
+                )
+            
+            # Step 8: Update query_logs with search results
+            print("[API] Step 8: Updating query logs with search results...")
+            search_results = result.get("search_results", [])
+            for i, search_result in enumerate(search_results):
+                if i < len(query_log_ids):
+                    await db_service.update_query_log(
+                        query_id=query_log_ids[i],
+                        results=search_result.get("result", ""),
+                        citations=search_result.get("citations", []),
+                        status=search_result.get("status", [])
+                    )
+                    print(f"[API] Updated query log {i+1} with search results")
+            
+            
+            # Step 10: Generate AI summary and return results
+            print("[API] Step 10: Generating AI summary...")
+            summary = await openai_service.generate_research_summary(recent_messages, search_results)
 
-        await db_service.store_message(
-            session_id=session_id,
-            role="assistant",
-            content=summary
-        )
-        
-        return summary_response
+            # Create summary response
+            summary_response = ResearchSummaryResponse(
+                request_id=result.get('request_id'),
+                status=result.get('status'),
+                message=result.get('message'),
+                research_question=result.get('research_question'),
+                workflow_type=result.get('workflow_type'),
+                execution_summary=result.get('execution_summary'),
+                summary=summary,
+                timestamp=result.get('timestamp'),
+                processing_time=result.get('processing_time')
+            )
+
+            assistant_message = await db_service.store_message(
+                session_id=session_id,
+                role="assistant",
+                content=summary,
+                reply_to=recent_messages[-1]["message_id"]
+            )
+            
+            return summary_response
 
     except Exception as e:
         print(f"❌ Unhandled error in /research endpoint: {str(e)}")
@@ -392,4 +424,143 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "database": "disconnected"
+    }
+
+
+def get_latest_user_message(messages: list) -> Optional[str]:
+    """Return the content of the most recent user message from a list of messages."""
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return message.get("content")
+    return None
+
+@router.post("/chat/send")
+async def chat_send(request: dict):
+    """
+    Unified chat endpoint: stores user message, triggers research, stores assistant reply, returns both messages and research summary.
+    """
+    session_id = request.get("session_id")
+    content = request.get("content")
+    if not session_id or not content:
+        raise HTTPException(status_code=400, detail="session_id and content are required")
+
+    db_service = get_database_service()
+    openai_service = OpenAIService()
+
+    # Store user message
+    user_message = await db_service.store_message(
+        session_id=session_id,
+        role="user",
+        content=content
+    )
+
+    # Get recent messages and latest user message
+    recent_messages = await db_service.get_recent_messages(session_id, 7)
+    recent_messages_simple = [{"role": m["role"], "content": m["content"]} for m in recent_messages]
+    latest_user_message = get_latest_user_message(recent_messages_simple)
+    if not latest_user_message:
+        raise HTTPException(status_code=400, detail="No user message found in recent messages.")
+
+    # Get domain metadata from RAG API and convert to dicts
+    domain_metadata = await call_rag_api(recent_messages_simple)
+    from ..models.domain import DomainMetadata
+    domain_metadata_objects = [DomainMetadata(**d) for d in domain_metadata]
+    domain_metadata_dicts = [d.dict() for d in domain_metadata_objects]
+
+    # Get router decision
+    router_start = time.time()
+    router_answer = await openai_service.get_router_decision(recent_messages_simple)
+    router_elapsed = time.time() - router_start
+    if not router_answer:
+        raise HTTPException(status_code=500, detail="Router decision failed")
+    router_decision = router_answer["type"]
+    enhanced_query = router_answer["content"]
+
+    # Store research request
+    request_id = await db_service.store_research_request(
+        message_id=user_message["message_id"],
+        session_id=session_id,
+        research_question=enhanced_query,
+        workflow_type=router_decision,
+        domain_metadata=domain_metadata_dicts
+    )
+
+    if router_decision == "direct_response":
+        summary = enhanced_query
+        assistant_message = await db_service.store_message(
+            session_id=session_id,
+            role="assistant",
+            content=summary,
+            reply_to=user_message["message_id"]
+        )
+        await db_service.update_research_request(
+            request_id=request_id,
+            updates={"status": "completed", "processing_time": router_elapsed}
+        )
+        return {
+            "success": True,
+            "user_message": user_message,
+            "assistant_message": assistant_message,
+            "research_summary": {
+                "request_id": request_id,
+                "status": "completed",
+                "message": "Direct LLM response provided.",
+                "research_question": latest_user_message,
+                "workflow_type": "direct_response",
+                "execution_summary": {},
+                "search_results": [],
+                "timestamp": datetime.now().isoformat(),
+                "processing_time": router_elapsed
+            },
+            "summary": summary
+        }
+
+    # Otherwise, run the research workflow
+    parallel_queries = await openai_service.generate_and_map_research_queries(router_decision, enhanced_query, domain_metadata)
+    query_log_ids = [
+        await db_service.store_query_log(
+            request_id=request_id,
+            query_text=query["query"],
+            query_type=query["type"],
+            websites=query["websites"]
+        )
+        for query in parallel_queries
+    ]
+
+    from ..core import DynamicTICResearchWorkflow
+    workflow = DynamicTICResearchWorkflow(domain_metadata_objects)
+    result = await workflow.execute_workflow(router_decision, latest_user_message, parallel_queries)
+    search_results = result.get("search_results", [])
+
+    for i, search_result in enumerate(search_results):
+        if i < len(query_log_ids):
+            await db_service.update_query_log(
+                query_id=query_log_ids[i],
+                results=search_result.get("result", ""),
+                citations=search_result.get("citations", []),
+                status=search_result.get("status", [])
+            )
+
+    await db_service.update_research_request(
+        request_id=request_id,
+        updates={
+            "status": result.get("status"),
+            "processing_time": result.get("processing_time")
+        }
+    )
+
+    summary = await openai_service.generate_research_summary(recent_messages_simple, search_results)
+    assistant_message = await db_service.store_message(
+        session_id=session_id,
+        role="assistant",
+        content=summary,
+        reply_to=user_message["message_id"]
+    )
+
+    return {
+        "success": True,
+        "user_message": user_message,
+        "assistant_message": assistant_message,
+        "research_summary": result,
+        "summary": summary
     } 
