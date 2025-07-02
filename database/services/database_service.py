@@ -357,7 +357,7 @@ class DatabaseService:
                     INSERT INTO research_requests (request_id, session_id, message_id,
                                                  enhanced_query, workflow_type, 
                                                  domain_metadata_used, timestamp, status)
-                    VALUES (:request_id, :session_id, :message_id, :research_question,
+                    VALUES (:request_id, :session_id, :message_id, :enhanced_query,
                            :workflow_type, :domain_metadata, NOW(), 'pending')
                     RETURNING request_id
                 """)
@@ -366,7 +366,7 @@ class DatabaseService:
                     "request_id": request_id,
                     "session_id": session_id,
                     "message_id": message_id,
-                    "research_question": research_question,
+                    "enhanced_query": research_question,
                     "workflow_type": workflow_type,
                     "domain_metadata": domain_metadata_json  # Pass as JSON string
                 })
@@ -501,7 +501,7 @@ class DatabaseService:
                     "websites": websites_json
                 })
 
-                return result.fetchone()[0]
+                return result.scalar()
                 
         except Exception as e:
             logger.error(f"Failed to store query log: {e}")
@@ -638,6 +638,145 @@ class DatabaseService:
                 
         except Exception as e:
             logger.error(f"Failed to get analytics summary: {e}")
+            raise
+
+
+    # =============================================================================
+    # USER OPERATIONS
+    # =============================================================================
+    
+    async def create_user(self, email: str, first_name: str, last_name: str = None, 
+                         company_name: str = None, phone_number: str = None) -> Dict[str, Any]:
+        """Create a new user"""
+        try:
+            async with self.get_session() as session:
+                user_id = f"user_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+                query = text("""
+                    INSERT INTO users (user_id, email, first_name, last_name, company_name, phone_number, created_at)
+                    VALUES (:user_id, :email, :first_name, :last_name, :company_name, :phone_number, NOW())
+                    RETURNING user_id, email, first_name, last_name, company_name, created_at
+                """)
+                result = await session.execute(query, {
+                    "user_id": user_id,
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "company_name": company_name,
+                    "phone_number": phone_number
+                })
+                row = result.fetchone()
+                return {
+                    "user_id": row.user_id,
+                    "email": row.email,
+                    "first_name": row.first_name,
+                    "last_name": row.last_name,
+                    "company_name": row.company_name,
+                    "created_at": row.created_at.isoformat()
+                }
+        except Exception as e:
+            logger.error(f"Failed to create user: {e}")
+            raise
+    
+    async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get user by email"""
+        try:
+            async with self.get_session() as session:
+                query = text("""
+                    SELECT user_id, email, first_name, last_name, company_name, 
+                           created_at, last_active, preferences
+                    FROM users 
+                    WHERE email = :email
+                """)
+                result = await session.execute(query, {"email": email})
+                row = result.fetchone()
+                if row:
+                    return {
+                        "user_id": row.user_id,
+                        "email": row.email,
+                        "first_name": row.first_name,
+                        "last_name": row.last_name,
+                        "company_name": row.company_name,
+                        "created_at": row.created_at.isoformat(),
+                        "last_active": row.last_active.isoformat() if row.last_active else None,
+                        "preferences": row.preferences
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get user: {e}")
+            raise
+    
+    # =============================================================================
+    # DOMAIN SET OPERATIONS
+    # =============================================================================
+    
+    async def create_domain_set(self, user_id: str, name: str, description: str = None,
+                               domain_metadata_list: List[Dict] = None, is_default: bool = False) -> Dict[str, Any]:
+        """Create a new domain set"""
+        try:
+            async with self.get_session() as session:
+                domain_set_id = f"domain_set_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+                domain_metadata_json = json.dumps(domain_metadata_list or [])
+                
+                query = text("""
+                    INSERT INTO domain_sets (domain_set_id, user_id, name, description, 
+                                           domain_metadata_list, created_at, updated_at, is_default)
+                    VALUES (:domain_set_id, :user_id, :name, :description, 
+                           :domain_metadata_list, NOW(), NOW(), :is_default)
+                    RETURNING domain_set_id, user_id, name, description, created_at, is_default
+                """)
+                result = await session.execute(query, {
+                    "domain_set_id": domain_set_id,
+                    "user_id": user_id,
+                    "name": name,
+                    "description": description,
+                    "domain_metadata_list": domain_metadata_json,
+                    "is_default": is_default
+                })
+                row = result.fetchone()
+                return {
+                    "domain_set_id": row.domain_set_id,
+                    "user_id": row.user_id,
+                    "name": row.name,
+                    "description": row.description,
+                    "created_at": row.created_at.isoformat(),
+                    "is_default": row.is_default
+                }
+        except Exception as e:
+            logger.error(f"Failed to create domain set: {e}")
+            raise
+    
+    async def get_user_domain_sets(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get domain sets for a user"""
+        try:
+            async with self.get_session() as session:
+                query = text("""
+                    SELECT domain_set_id, name, description, domain_metadata_list,
+                           created_at, updated_at, is_default, is_shared, usage_count
+                    FROM domain_sets 
+                    WHERE user_id = :user_id
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                """)
+                result = await session.execute(query, {
+                    "user_id": user_id,
+                    "limit": limit
+                })
+                return [
+                    {
+                        "domain_set_id": row.domain_set_id,
+                        "name": row.name,
+                        "description": row.description,
+                        "domain_metadata_list": row.domain_metadata_list,
+                        "created_at": row.created_at.isoformat(),
+                        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                        "is_default": row.is_default,
+                        "is_shared": row.is_shared,
+                        "usage_count": row.usage_count
+                    }
+                    for row in result.fetchall()
+                ]
+        except Exception as e:
+            logger.error(f"Failed to get user domain sets: {e}")
             raise
 
 

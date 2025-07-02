@@ -54,6 +54,20 @@ class LogAnalyticsRequest(BaseModel):
     user_agent: Optional[str] = Field(None, description="User agent")
     performance_data: Optional[Dict[str, Any]] = Field(default={}, description="Performance data")
 
+class CreateUserRequest(BaseModel):
+    email: str = Field(..., description="User email")
+    first_name: str = Field(..., description="User first name")
+    last_name: Optional[str] = Field(None, description="User last name")
+    company_name: Optional[str] = Field(None, description="Company name")
+    phone_number: Optional[str] = Field(None, description="Phone number")
+
+class CreateDomainSetRequest(BaseModel):
+    user_id: str = Field(..., description="User identifier")
+    name: str = Field(..., description="Domain set name")
+    description: Optional[str] = Field(None, description="Domain set description")
+    domain_metadata_list: Optional[List[Dict[str, Any]]] = Field(default=[], description="Domain metadata list")
+    is_default: Optional[bool] = Field(False, description="Whether this is the default domain set")
+
 # =============================================================================
 # SESSION ENDPOINTS
 # =============================================================================
@@ -146,6 +160,95 @@ async def get_user_sessions(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get user sessions: {str(e)}")
+
+# =============================================================================
+# USER ENDPOINTS
+# =============================================================================
+
+@db_router.post("/users/create", response_model=Dict[str, Any])
+async def create_user(
+    request: CreateUserRequest,
+    db_service: DatabaseService = Depends(get_database_service)
+):
+    """Create a new user"""
+    try:
+        user_data = await db_service.create_user(
+            email=request.email,
+            first_name=request.first_name,
+            last_name=request.last_name,
+            company_name=request.company_name,
+            phone_number=request.phone_number
+        )
+        return {
+            "success": True,
+            "user": user_data,
+            "message": "User created successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+
+@db_router.get("/users/email/{email}", response_model=Dict[str, Any])
+async def get_user_by_email(
+    email: str,
+    db_service: DatabaseService = Depends(get_database_service)
+):
+    """Get user by email"""
+    try:
+        user_data = await db_service.get_user_by_email(email)
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {
+            "success": True,
+            "user": user_data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get user: {str(e)}")
+
+# =============================================================================
+# DOMAIN SET ENDPOINTS
+# =============================================================================
+
+@db_router.post("/domain-sets/create", response_model=Dict[str, Any])
+async def create_domain_set(
+    request: CreateDomainSetRequest,
+    db_service: DatabaseService = Depends(get_database_service)
+):
+    """Create a new domain set"""
+    try:
+        domain_set_data = await db_service.create_domain_set(
+            user_id=request.user_id,
+            name=request.name,
+            description=request.description,
+            domain_metadata_list=request.domain_metadata_list,
+            is_default=request.is_default
+        )
+        return {
+            "success": True,
+            "domain_set": domain_set_data,
+            "message": "Domain set created successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create domain set: {str(e)}")
+
+@db_router.get("/domain-sets/user/{user_id}", response_model=Dict[str, Any])
+async def get_user_domain_sets(
+    user_id: str,
+    limit: int = 50,
+    db_service: DatabaseService = Depends(get_database_service)
+):
+    """Get domain sets for a user"""
+    try:
+        domain_sets = await db_service.get_user_domain_sets(user_id, limit)
+        return {
+            "success": True,
+            "domain_sets": domain_sets,
+            "count": len(domain_sets)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get user domain sets: {str(e)}")
 
 # =============================================================================
 # MESSAGE ENDPOINTS

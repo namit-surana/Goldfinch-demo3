@@ -2,7 +2,7 @@
 """
 TIC Research API - Main Entry Point
 """
-
+from src.api import app
 from dotenv import load_dotenv
 load_dotenv()
 
