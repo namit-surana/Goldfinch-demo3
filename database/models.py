@@ -46,7 +46,7 @@ class User(Base):
 
 class Session(Base):
     """Session table"""
-    __tablename__ = "sessions"
+    __tablename__ = "chat_sessions"
     
     session_id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
@@ -71,7 +71,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
     
     message_id = Column(String, primary_key=True, default=generate_uuid)
-    session_id = Column(String, ForeignKey("sessions.session_id"), nullable=False)
+    session_id = Column(String, ForeignKey("chat_sessions.session_id"), nullable=False)
     role = Column(String, nullable=False)  # 'user', 'assistant', 'system'
     content = Column(Text, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
@@ -89,7 +89,7 @@ class ConversationMemory(Base):
     __tablename__ = "conversation_memory"
     
     memory_id = Column(String, primary_key=True, default=generate_uuid)
-    session_id = Column(String, ForeignKey("sessions.session_id"), nullable=False)
+    session_id = Column(String, ForeignKey("chat_sessions.session_id"), nullable=False)
     summary = Column(Text, nullable=True)
     up_to_message_order = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -103,7 +103,7 @@ class ResearchRequest(Base):
     __tablename__ = "research_requests"
     
     request_id = Column(String, primary_key=True, default=generate_uuid)
-    session_id = Column(String, ForeignKey("sessions.session_id"), nullable=False)
+    session_id = Column(String, ForeignKey("chat_sessions.session_id"), nullable=False)
     message_id = Column(String, ForeignKey("chat_messages.message_id"), nullable=True)
     enhanced_query = Column(Text, nullable=False)
     workflow_type = Column(String, nullable=False)
@@ -158,7 +158,7 @@ class Analytics(Base):
     
     analytics_id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.user_id"), nullable=True)
-    session_id = Column(String, ForeignKey("sessions.session_id"), nullable=True)
+    session_id = Column(String, ForeignKey("chat_sessions.session_id"), nullable=True)
     event_type = Column(String, nullable=False)
     event_data = Column(JSON, default={})
     timestamp = Column(DateTime(timezone=True), server_default=func.now())

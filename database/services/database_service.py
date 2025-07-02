@@ -96,9 +96,9 @@ class DatabaseService:
         """Create a new chat session"""
         try:
             async with self.get_session() as session:
-                session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{user_id[:8]}"
+                session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{user_id}"
                 query = text("""
-                    INSERT INTO sessions (session_id, user_id, session_name, created_at, updated_at, is_active, message_count, starred)
+                    INSERT INTO chat_sessions (session_id, user_id, session_name, created_at, updated_at, is_active, message_count, starred)
                     VALUES (:session_id, :user_id, :session_name, NOW(), NOW(), true, 0, :starred)
                     RETURNING session_id, user_id, session_name, created_at, starred
                 """)
@@ -127,7 +127,7 @@ class DatabaseService:
                 query = text("""
                     SELECT session_id, user_id, session_name, created_at, updated_at, 
                            is_active, message_count, starred
-                    FROM sessions 
+                    FROM chat_sessions 
                     WHERE session_id = :session_id
                 """)
                 result = await session.execute(query, {"session_id": session_id})
@@ -162,7 +162,7 @@ class DatabaseService:
                     return False
                 set_clauses.append("updated_at = NOW()")
                 query = text(f"""
-                    UPDATE sessions 
+                    UPDATE chat_sessions 
                     SET {', '.join(set_clauses)}
                     WHERE session_id = :session_id
                 """)
@@ -179,12 +179,12 @@ class DatabaseService:
                 query = text("""
                     SELECT session_id, session_name, created_at, updated_at, 
                            is_active, message_count, starred
-                    FROM sessions 
+                    FROM chat_sessions 
                     WHERE user_id = :user_id
                     ORDER BY updated_at DESC
                     LIMIT :limit OFFSET :offset
                 """)
-                result = await session.execute({
+                result = await session.execute(query, {
                     "user_id": user_id,
                     "limit": limit,
                     "offset": offset
@@ -210,7 +210,7 @@ class DatabaseService:
     # =============================================================================
     
     async def store_message(self, session_id: str, role: str, content: str, 
-                          message_order: int = None, metadata: Dict = None, reply_to: str = None, type: str = None) -> Dict[str, Any]:
+                          message_order: int = None, reply_to: str = None, type: str = None) -> Dict[str, Any]:
         """Store a chat message"""
         try:
             async with self.get_session() as session:
@@ -222,7 +222,7 @@ class DatabaseService:
                     """)
                     result = await session.execute(order_query, {"session_id": session_id})
                     message_order = result.scalar()
-                message_id = f"msg_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session_id[:8]}"
+                message_id = f"msg_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session_id}"
                 query = text("""
                     INSERT INTO chat_messages (message_id, session_id, role, content, 
                                              message_order, timestamp, reply_to, type)
@@ -241,7 +241,7 @@ class DatabaseService:
                 })
                 row = result.fetchone()
                 await session.execute(text("""
-                    UPDATE sessions 
+                    UPDATE chat_sessions 
                     SET message_count = message_count + 1, updated_at = NOW()
                     WHERE session_id = :session_id
                 """), {"session_id": session_id})
@@ -348,7 +348,7 @@ class DatabaseService:
         """Store a research request"""
         try:
             async with self.get_session() as session:
-                request_id = f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session_id[:8]}"
+                request_id = f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session_id}"
                 
                 # Serialize domain_metadata to JSON string for Postgres jsonb
                 domain_metadata_json = json.dumps(domain_metadata) if domain_metadata is not None else '{}'
@@ -480,7 +480,7 @@ class DatabaseService:
         """Store a query log entry"""
         try:
             async with self.get_session() as session:
-                query_id = f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{request_id[:8]}_{uuid.uuid4().hex[:6]}"
+                query_id = f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{request_id}_{uuid.uuid4().hex[:6]}"
                 
                 # Serialize websites to JSON string
                 websites_json = json.dumps(websites or [])

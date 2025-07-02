@@ -34,7 +34,7 @@ ALTER TABLE users ADD CONSTRAINT fk_users_default_domain_set
     FOREIGN KEY (default_domain_set_id) REFERENCES domain_sets(domain_set_id);
 
 -- Sessions table
-CREATE TABLE sessions (
+CREATE TABLE chat_sessions (
     session_id VARCHAR PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     user_id VARCHAR NOT NULL REFERENCES users(user_id),
     title VARCHAR,
@@ -50,7 +50,7 @@ CREATE TABLE sessions (
 -- Conversation memory table
 CREATE TABLE conversation_memory (
     memory_id VARCHAR PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    session_id VARCHAR NOT NULL REFERENCES sessions(session_id),
+    session_id VARCHAR NOT NULL REFERENCES chat_sessions(session_id),
     summary TEXT,
     up_to_message_order INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -59,13 +59,13 @@ CREATE TABLE conversation_memory (
 );
 
 -- Add foreign key constraint for sessions.current_memory_id
-ALTER TABLE sessions ADD CONSTRAINT fk_sessions_current_memory 
+ALTER TABLE chat_sessions ADD CONSTRAINT fk_chat_sessions_current_memory 
     FOREIGN KEY (current_memory_id) REFERENCES conversation_memory(memory_id);
 
 -- Chat messages table
 CREATE TABLE chat_messages (
     message_id VARCHAR PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    session_id VARCHAR NOT NULL REFERENCES sessions(session_id),
+    session_id VARCHAR NOT NULL REFERENCES chat_sessions(session_id),
     role VARCHAR NOT NULL,
     content TEXT NOT NULL,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -77,7 +77,7 @@ CREATE TABLE chat_messages (
 -- Research requests table
 CREATE TABLE research_requests (
     request_id VARCHAR PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    session_id VARCHAR NOT NULL REFERENCES sessions(session_id),
+    session_id VARCHAR NOT NULL REFERENCES chat_sessions(session_id),
     message_id VARCHAR REFERENCES chat_messages(message_id),
     research_question TEXT NOT NULL,
     workflow_type VARCHAR NOT NULL,
@@ -113,7 +113,7 @@ CREATE TABLE query_logs (
 CREATE TABLE analytics (
     analytics_id VARCHAR PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     user_id VARCHAR REFERENCES users(user_id),
-    session_id VARCHAR REFERENCES sessions(session_id),
+    session_id VARCHAR REFERENCES chat_sessions(session_id),
     event_type VARCHAR NOT NULL,
     event_data JSONB DEFAULT '{}',
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -124,8 +124,8 @@ CREATE TABLE analytics (
 
 -- Create indexes for better performance
 CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_sessions_user_id ON sessions(user_id);
-CREATE INDEX idx_sessions_created_at ON sessions(created_at);
+CREATE INDEX idx_sessions_user_id ON chat_sessions(user_id);
+CREATE INDEX idx_sessions_created_at ON chat_sessions(created_at);
 CREATE INDEX idx_chat_messages_session_id ON chat_messages(session_id);
 CREATE INDEX idx_chat_messages_timestamp ON chat_messages(timestamp);
 CREATE INDEX idx_research_requests_session_id ON research_requests(session_id);
@@ -146,7 +146,7 @@ END;
 $$ language 'plpgsql';
 
 -- Add triggers for updated_at columns
-CREATE TRIGGER update_sessions_updated_at BEFORE UPDATE ON sessions
+CREATE TRIGGER update_sessions_updated_at BEFORE UPDATE ON chat_sessions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_domain_sets_updated_at BEFORE UPDATE ON domain_sets

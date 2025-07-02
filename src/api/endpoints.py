@@ -451,7 +451,8 @@ async def chat_send(request: dict):
     user_message = await db_service.store_message(
         session_id=session_id,
         role="user",
-        content=content
+        content=content,
+        type="text"
     )
 
     # Get recent messages and latest user message
@@ -554,7 +555,8 @@ async def chat_send(request: dict):
         session_id=session_id,
         role="assistant",
         content=summary,
-        reply_to=user_message["message_id"]
+        reply_to=user_message["message_id"],
+        type="text"
     )
 
     return {
