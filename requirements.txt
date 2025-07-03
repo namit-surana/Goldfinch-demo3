@@ -7,6 +7,6 @@ psycopg2-binary
 python-dotenv
 requests
 aiohttp
-pydantic
+pydantic==1.10.22
 openai
 # Add any other required packages below 

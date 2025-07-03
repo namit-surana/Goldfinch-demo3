@@ -12,15 +12,25 @@ services:
     
     # The command to start your API server
     # Render automatically sets the $PORT environment variable
-    startCommand: "uvicorn src.api_server:app --host 0.0.0.0 --port $PORT"
+    startCommand: "python start_production.py"
     
     # Health Check endpoint that Render uses to know if your app is live
     healthCheckPath: /health
     
-    # Environment variables for your API keys
+    # Environment variables for your API keys and database
     # IMPORTANT: You must add the actual values in the Render dashboard.
     envVars:
       - key: OPENAI_API_KEY
         value: "" # Add your key in the Render UI
       - key: PERPLEXITY_API_KEY
-        value: "" # Add your key in the Render UI 
+        value: "" # Add your key in the Render UI
+      - key: DB_HOST
+        value: "" # Add your database host in the Render UI
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_NAME
+        value: "" # Add your database name in the Render UI
+      - key: DB_USER
+        value: "" # Add your database user in the Render UI
+      - key: DB_PASSWORD
+        value: "" # Add your database password in the Render UI 

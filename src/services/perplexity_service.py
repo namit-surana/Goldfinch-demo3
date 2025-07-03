@@ -50,7 +50,7 @@ class PerplexityService:
         if use_structured_output:
             body["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {"schema": Certifications.model_json_schema()}
+                "json_schema": {"schema": Certifications.schema()}
             }
         
         # Add domain filter if domains are provided

@@ -227,3 +227,38 @@ answers: {research_results}
             print(f"❌ Error generating research summary: {e}")
             # Fallback: return a basic summary
             return f"Research completed for: {research_results.get('research_question', 'N/A')}. Found {len(research_results.get('search_results', []))} search results." 
+
+    def generate_research_summary_streaming(self, context: List[Dict[str, Any]], research_results: Dict[str, Any]):
+        """Generate a streaming summary of research results using OpenAI"""
+        from ..config import RESEARCH_SUMMARY_SYSTEM_PROMPT
+        
+        print("[OPENAI SERVICE] generate_research_summary_streaming called")
+        
+        try:
+            # Convert research results to a user-friendly format
+            user_prompt = f"""
+context: {context},
+answers: {research_results}
+"""
+            
+            # Use OpenAI's streaming chat completions
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": RESEARCH_SUMMARY_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                stream=True
+            )
+            
+            # Stream the chunks
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+            
+            print(f"✅ Completed streaming research summary generation")
+            
+        except Exception as e:
+            print(f"❌ Error generating streaming research summary: {e}")
+            # Fallback: yield a basic summary
+            yield f"Research completed for: {research_results.get('research_question', 'N/A')}. Found {len(research_results.get('search_results', []))} search results." 

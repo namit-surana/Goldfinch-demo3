@@ -78,7 +78,7 @@ async def test_openai_structured_output():
         
         print()
         print("🔧 Raw Pydantic Model:")
-        print(json.dumps(response.output_parsed.model_dump(), indent=2))
+        print(json.dumps(response.output_parsed.dict(), indent=2))
         
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -134,7 +134,7 @@ async def test_openai_query_mapping():
             print()
         
         print("🔧 Raw Pydantic Model:")
-        print(json.dumps(response.output_parsed.model_dump(), indent=2))
+        print(json.dumps(response.output_parsed.dict(), indent=2))
         
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -183,7 +183,7 @@ async def test_perplexity_structured_output():
         "temperature": 0.1,
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"schema": Certifications.model_json_schema()}
+            "json_schema": {"schema": Certifications.schema()}
         }
     }
     
@@ -213,7 +213,7 @@ async def test_perplexity_structured_output():
                         print(f"     Fee: {cert.registration_fee}")
                     
                     print("\n🔧 Raw Pydantic Model:")
-                    print(json.dumps(certifications.model_dump(), indent=2))
+                    print(json.dumps(certifications.dict(), indent=2))
                     
                     if citations:
                         print(f"\n📚 Citations:")
