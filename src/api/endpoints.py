@@ -105,25 +105,51 @@ def get_latest_user_message(messages: list) -> Optional[str]:
     return None
 
 
+@router.post("/chat/cancel")
+async def cancel_request(request: dict):
+    """Cancel a user message or all messages in a session"""
+    try:
+        message_id = request.get("message_id")
+        session_id = request.get("session_id")
+        reason = request.get("reason", "User requested cancellation")
+        
+        if not message_id and not session_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Either message_id or session_id is required"
+            )
+        
+        db_service = get_database_service()
+        cancelled_count = 0
+        if message_id:
+            success = await db_service.cancel_message(message_id, reason)
+            cancelled_count = 1 if success else 0
+        elif session_id:
+            cancelled_count = await db_service.cancel_session_messages(session_id, reason)
+        return {
+            "status": "success" if cancelled_count > 0 else "no_active_requests",
+            "cancelled_count": cancelled_count,
+            "message": f"Cancelled {cancelled_count} request(s)"
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error cancelling request: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cancel request")
+
+
 @router.post("/chat/stream_summary")
 async def chat_stream_summary(request: dict):
-    """
-    Streaming chat endpoint: stores user message, triggers research, and streams the entire process including summary generation.
-    """
     session_id = request.get("session_id")
     content = request.get("content")
     if not session_id or not content:
         raise HTTPException(status_code=400, detail="session_id and content are required")
 
     async def generate_stream():
-        """Generator function for streaming the complete workflow"""
+        db_service = get_database_service()
+        openai_service = OpenAIService()
+        message_id = None
         try:
-            db_service = get_database_service()
-            openai_service = OpenAIService()
-
-            # Send initial status
-            yield f"data: {json.dumps({'type': 'status', 'message': 'Processing your request...'})}\n\n"
-
             # Store user message
             user_message = await db_service.store_message(
                 session_id=session_id,
@@ -131,40 +157,64 @@ async def chat_stream_summary(request: dict):
                 content=content,
                 type="text"
             )
-            
+            message_id = user_message["message_id"]
             yield f"data: {json.dumps({'type': 'user_message', 'data': user_message})}\n\n"
 
-            # Get recent messages and latest user message
+            # Check cancellation before any processing
+            if await db_service.is_message_cancelled(message_id, session_id):
+                # Get the cancellation message that was stored
+                cancellation_message = await db_service.get_cancellation_message(message_id)
+                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled before processing', 'assistant_message': cancellation_message})}\n\n"
+                return
+
+            # Get recent messages
             recent_messages = await db_service.get_recent_messages(session_id, 7)
             recent_messages_simple = [{"role": m["role"], "content": m["content"]} for m in recent_messages]
             latest_user_message = get_latest_user_message(recent_messages_simple)
-            
             if not latest_user_message:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'No user message found in recent messages.'})}\n\n"
                 return
 
+            # Check cancellation before RAG call
+            if await db_service.is_message_cancelled(message_id, session_id):
+                # Get the cancellation message that was stored
+                cancellation_message = await db_service.get_cancellation_message(message_id)
+                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled before RAG call', 'assistant_message': cancellation_message})}\n\n"
+                return
+
             # Stream progress: Getting domain metadata
             yield f"data: {json.dumps({'type': 'status', 'message': 'Fetching domain metadata...'})}\n\n"
-            
             domain_metadata = await call_rag_api(recent_messages_simple)
+
+            # Check cancellation after RAG call
+            if await db_service.is_message_cancelled(message_id, session_id):
+                # Get the cancellation message that was stored
+                cancellation_message = await db_service.get_cancellation_message(message_id)
+                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled after RAG call', 'assistant_message': cancellation_message})}\n\n"
+                return
+
             from ..models.domain import DomainMetadata
             domain_metadata_objects = [DomainMetadata(**d) for d in domain_metadata]
             domain_metadata_dicts = [d.dict() for d in domain_metadata_objects]
 
             # Stream progress: Router decision
             yield f"data: {json.dumps({'type': 'status', 'message': 'Determining research workflow...'})}\n\n"
-            
             router_start = time.time()
             router_answer = await openai_service.get_router_decision(recent_messages_simple)
             router_elapsed = time.time() - router_start
-            
+
+            # Check cancellation after router decision
+            if await db_service.is_message_cancelled(message_id, session_id):
+                # Get the cancellation message that was stored
+                cancellation_message = await db_service.get_cancellation_message(message_id)
+                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled after router decision', 'assistant_message': cancellation_message})}\n\n"
+                return
+
             if not router_answer:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Router decision failed'})}\n\n"
                 return
-                
             router_decision = router_answer["type"]
             enhanced_query = router_answer["content"]
-            
             yield f"data: {json.dumps({'type': 'router_decision', 'workflow_type': router_decision, 'enhanced_query': enhanced_query})}\n\n"
 
             # Store research request
@@ -175,8 +225,18 @@ async def chat_stream_summary(request: dict):
                 workflow_type=router_decision,
                 domain_metadata=domain_metadata_dicts
             )
+            
+            # Store query logs for tracking individual queries
+            query_log_ids = []
 
             if router_decision == "direct_response":
+                # Check for cancellation before direct response
+                if await db_service.is_message_cancelled(message_id, session_id):
+                    # Get the cancellation message that was stored
+                    cancellation_message = await db_service.get_cancellation_message(message_id)
+                    yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled by user', 'assistant_message': cancellation_message})}\n\n"
+                    return
+                
                 # Stream the direct response
                 yield f"data: {json.dumps({'type': 'summary_chunk', 'content': enhanced_query})}\n\n"
                 
@@ -198,79 +258,123 @@ async def chat_stream_summary(request: dict):
             # Stream progress: Research workflow
             yield f"data: {json.dumps({'type': 'status', 'message': 'Generating research queries...'})}\n\n"
             
-            parallel_queries = await openai_service.generate_and_map_research_queries(router_decision, enhanced_query, domain_metadata)
+            # Check for cancellation before starting research
+            if await db_service.is_message_cancelled(message_id, session_id):
+                # Get the cancellation message that was stored
+                cancellation_message = await db_service.get_cancellation_message(message_id)
+                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled by user', 'assistant_message': cancellation_message})}\n\n"
+                return
             
-            # Show the generated queries to the user
-            generated_queries = list(set([q["query"] for q in parallel_queries]))  # Remove duplicates
-            yield f"data: {json.dumps({'type': 'research_queries', 'queries': generated_queries})}\n\n"
-            
-            yield f"data: {json.dumps({'type': 'status', 'message': f'Executing {len(parallel_queries)} research queries...'})}\n\n"
-            
-            query_log_ids = [
-                await db_service.store_query_log(
-                    request_id=request_id,
-                    query_text=query["query"],
-                    query_type=query["type"],
-                    websites=query["websites"]
-                )
-                for query in parallel_queries
-            ]
-
-            # Execute research workflow with progress updates
-            from ..core import DynamicTICResearchWorkflow
+            # Execute research workflow with cancellation support
             workflow = DynamicTICResearchWorkflow(domain_metadata_objects)
             
-            # Add progress callback for individual search updates
             async def search_progress_callback(search_type, message):
-                yield f"data: {json.dumps({'type': 'search_progress', 'search_type': search_type, 'message': message})}\n\n"
+                """Callback for search progress updates"""
+                # Check for cancellation in callback
+                if await db_service.is_message_cancelled(message_id, session_id):
+                    raise Exception("Request cancelled during search")
+                
+                # Note: We can't yield here since this is called from the workflow
+                # The workflow will handle progress updates internally
             
-            result = await workflow.execute_workflow(router_decision, latest_user_message, parallel_queries)
-            search_results = result.get("search_results", [])
-
-            # Update query logs
-            for i, search_result in enumerate(search_results):
-                if i < len(query_log_ids):
-                    await db_service.update_query_log(
-                        query_id=query_log_ids[i],
-                        results=search_result.get("result", ""),
-                        citations=search_result.get("citations", []),
-                        status=search_result.get("status", [])
+            try:
+                # Execute workflow with cancellation support
+                research_result = await workflow.route_research_request_with_progress(
+                    enhanced_query, 
+                    recent_messages_simple, 
+                    search_progress_callback
+                )
+                
+                # Check for cancellation after research
+                if await db_service.is_message_cancelled(message_id, session_id):
+                    # Get the cancellation message that was stored
+                    cancellation_message = await db_service.get_cancellation_message(message_id)
+                    yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled by user', 'assistant_message': cancellation_message})}\n\n"
+                    return
+                
+                if research_result:
+                    # Store query logs from workflow result
+                    if research_result.get("search_tasks"):
+                        query_log_ids = [
+                            await db_service.store_query_log(
+                                request_id=request_id,
+                                query_text=task["query"],
+                                query_type=task["type"],
+                                websites=task["websites"]
+                            )
+                            for task in research_result["search_tasks"]
+                        ]
+                    
+                    # Stream progress: Generating summary
+                    yield f"data: {json.dumps({'type': 'status', 'message': 'Generating summary...'})}\n\n"
+                    
+                    # Generate summary with streaming
+                    summary_stream = openai_service.generate_research_summary_streaming(
+                        recent_messages_simple, research_result
                     )
-
-            await db_service.update_research_request(
-                request_id=request_id,
-                updates={
-                    "status": result.get("status"),
-                    "processing_time": result.get("processing_time")
-                }
-            )
-
-            # Stream progress: Generating summary
-            yield f"data: {json.dumps({'type': 'status', 'message': 'Generating AI summary...'})}\n\n"
-
-            # **HERE'S THE KEY: Stream the summary generation using OpenAI's streaming**
-            summary_generator = openai_service.generate_research_summary_streaming(recent_messages_simple, search_results)
-            
-            full_summary = ""
-            for chunk in summary_generator:
-                if chunk:
-                    full_summary += chunk
-                    yield f"data: {json.dumps({'type': 'summary_chunk', 'content': chunk})}\n\n"
-            
-            # Store the complete assistant message
-            assistant_message = await db_service.store_message(
-                session_id=session_id,
-                role="assistant",
-                content=full_summary,
-                reply_to=user_message["message_id"],
-                type="text"
-            )
-
-            # Send completion event
-            yield f"data: {json.dumps({'type': 'completed', 'assistant_message': assistant_message, 'research_summary': result})}\n\n"
-
+                    
+                    full_summary = ""
+                    async for chunk in summary_stream:
+                        # Check for cancellation during summary generation
+                        if await db_service.is_message_cancelled(message_id, session_id, skip_cancellation_message=True):
+                            # Store partial summary if we have any content
+                            if full_summary.strip():
+                                # Store the partial summary as assistant message
+                                partial_message = await db_service.store_message(
+                                    session_id=session_id,
+                                    role="assistant",
+                                    content=full_summary + "\n\n[Generation stopped by user]",
+                                    reply_to=user_message["message_id"],
+                                    type="partial"
+                                )
+                                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': partial_message})}\n\n"
+                            else:
+                                # No partial content, get the cancellation message
+                                cancellation_message = await db_service.get_cancellation_message(message_id)
+                                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': cancellation_message})}\n\n"
+                            return
+                            
+                        full_summary += chunk
+                        yield f"data: {json.dumps({'type': 'summary_chunk', 'content': chunk})}\n\n"
+                    
+                    # Store assistant message
+                    assistant_message = await db_service.store_message(
+                        session_id=session_id,
+                        role="assistant",
+                        content=full_summary,
+                        reply_to=user_message["message_id"]
+                    )
+                    
+                    # Update query logs with results
+                    if query_log_ids and research_result.get("search_results"):
+                        for i, search_result in enumerate(research_result["search_results"]):
+                            if i < len(query_log_ids):
+                                await db_service.update_query_log(
+                                    query_id=query_log_ids[i],
+                                    results=search_result.get("result", ""),
+                                    citations=search_result.get("citations", []),
+                                    status=search_result.get("status", "completed")
+                                )
+                    
+                    # Update research request as completed
+                    await db_service.update_research_request(
+                        request_id=request_id,
+                        updates={"status": "completed", "processing_time": time.time() - router_start}
+                    )
+                    
+                    yield f"data: {json.dumps({'type': 'completed', 'assistant_message': assistant_message, 'request_id': request_id})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Research workflow failed'})}\n\n"
+                    
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                return
+                
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in chat stream: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred during processing'})}\n\n"
 
     return StreamingResponse(generate_stream(), media_type="text/plain")
 

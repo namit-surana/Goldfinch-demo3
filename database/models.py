@@ -98,6 +98,10 @@ class ChatMessage(Base):
     is_summarized = Column(Boolean, default=False)
     reply_to = Column(String, ForeignKey("chat_messages.message_id"), nullable=True)
     type = Column(String, nullable=True)
+    # Cancellation fields
+    is_cancelled = Column(Boolean, default=False)
+    cancellation_timestamp = Column(DateTime(timezone=True), nullable=True)
+    cancellation_reason = Column(Text, nullable=True)
     # Relationships
     session = relationship("Session", back_populates="chat_messages")
     research_requests = relationship("ResearchRequest", back_populates="triggering_message", foreign_keys='ResearchRequest.message_id')
@@ -169,4 +173,6 @@ class Analytics(Base):
     # Relationships
     user = relationship("User", back_populates="analytics")
     session = relationship("Session", back_populates="analytics")
+
+
 

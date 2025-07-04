@@ -214,7 +214,7 @@ answers: {research_results}
             # Fallback: return a basic summary
             return f"Research completed for: {research_results.get('research_question', 'N/A')}. Found {len(research_results.get('search_results', []))} search results." 
 
-    def generate_research_summary_streaming(self, context: List[Dict[str, Any]], research_results: Dict[str, Any]):
+    async def generate_research_summary_streaming(self, context: List[Dict[str, Any]], research_results: Dict[str, Any]):
         """Generate a streaming summary of research results using OpenAI"""
         from ..config import RESEARCH_SUMMARY_SYSTEM_PROMPT
         

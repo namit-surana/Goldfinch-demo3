@@ -381,6 +381,205 @@ class DatabaseService:
             logger.error(f"Failed to log analytics event: {e}")
             raise
 
+    # =============================================================================
+    # USER DOMAIN SETS
+    # =============================================================================
+    
+    async def create_domain_set(self, user_id: str, name: str, description: str = None,
+                              domain_metadata_list: List[Dict] = None, is_default: bool = False) -> Dict[str, Any]:
+        """Create a new domain set for a user"""
+        try:
+            async with self.get_session() as session:
+                domain_set_id = f"domain_set_{user_id}_{int(datetime.now().timestamp())}"
+                query = text("""
+                    INSERT INTO domain_sets (domain_set_id, user_id, name, description, 
+                                           domain_metadata_list, is_default, created_at, updated_at)
+                    VALUES (:domain_set_id, :user_id, :name, :description, :domain_metadata_list, :is_default, NOW(), NOW())
+                    RETURNING domain_set_id, name, description, is_default, created_at
+                """)
+                result = await session.execute(query, {
+                    "domain_set_id": domain_set_id,
+                    "user_id": user_id,
+                    "name": name,
+                    "description": description,
+                    "domain_metadata_list": json.dumps(domain_metadata_list or []),
+                    "is_default": is_default
+                })
+                row = result.fetchone()
+                return {
+                    "domain_set_id": row.domain_set_id,
+                    "name": row.name,
+                    "description": row.description,
+                    "is_default": row.is_default,
+                    "created_at": row.created_at.isoformat()
+                }
+        except Exception as e:
+            logger.error(f"Failed to create domain set: {e}")
+            raise
+    
+    async def get_user_domain_sets(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get domain sets for a user"""
+        try:
+            async with self.get_session() as session:
+                query = text("""
+                    SELECT domain_set_id, name, description, domain_metadata_list, 
+                           is_default, is_shared, usage_count, created_at, updated_at
+                    FROM domain_sets 
+                    WHERE user_id = :user_id
+                    ORDER BY is_default DESC, created_at DESC
+                    LIMIT :limit
+                """)
+                result = await session.execute(query, {"user_id": user_id, "limit": limit})
+                return [
+                    {
+                        "domain_set_id": row.domain_set_id,
+                        "name": row.name,
+                        "description": row.description,
+                        "domain_metadata_list": row.domain_metadata_list,
+                        "is_default": row.is_default,
+                        "is_shared": row.is_shared,
+                        "usage_count": row.usage_count,
+                        "created_at": row.created_at.isoformat(),
+                        "updated_at": row.updated_at.isoformat() if row.updated_at else None
+                    }
+                    for row in result.fetchall()
+                ]
+        except Exception as e:
+            logger.error(f"Failed to get user domain sets: {e}")
+            raise
+
+    # =============================================================================
+    # MESSAGE CANCELLATION OPERATIONS
+    # =============================================================================
+    
+    async def cancel_message(self, message_id: str, reason: str) -> bool:
+        """Cancel a specific message"""
+        try:
+            async with self.get_session() as session:
+                query = text("""
+                    UPDATE chat_messages 
+                    SET is_cancelled = TRUE,
+                        cancellation_timestamp = NOW(),
+                        cancellation_reason = :reason
+                    WHERE message_id = :message_id AND role = 'user'
+                """)
+                result = await session.execute(query, {"reason": reason, "message_id": message_id})
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Failed to cancel message: {e}")
+            raise
+    
+    async def cancel_session_messages(self, session_id: str, reason: str) -> int:
+        """Cancel all pending user messages in a session"""
+        try:
+            async with self.get_session() as session:
+                query = text("""
+                    UPDATE chat_messages 
+                    SET is_cancelled = TRUE,
+                        cancellation_timestamp = NOW(),
+                        cancellation_reason = :reason
+                    WHERE session_id = :session_id AND role = 'user' AND is_cancelled = FALSE
+                """)
+                result = await session.execute(query, {"reason": reason, "session_id": session_id})
+                return result.rowcount
+        except Exception as e:
+            logger.error(f"Failed to cancel session messages: {e}")
+            raise
+    
+    async def is_message_cancelled(self, message_id: str, session_id: str = None, skip_cancellation_message: bool = False) -> bool:
+        """Check if a message has been cancelled and optionally store cancellation message"""
+        try:
+            async with self.get_session() as session:
+                query = text("""
+                    SELECT is_cancelled, session_id FROM chat_messages 
+                    WHERE message_id = :message_id
+                """)
+                result = await session.execute(query, {"message_id": message_id})
+                row = result.fetchone()
+                
+                if not row:
+                    return False
+                
+                is_cancelled = row.is_cancelled
+                
+                # If cancelled and session_id provided, store cancellation message (unless skipped)
+                if is_cancelled and session_id and not skip_cancellation_message:
+                    # Check if cancellation message already exists
+                    check_query = text("""
+                        SELECT message_id FROM chat_messages 
+                        WHERE reply_to = :message_id AND type = 'cancelled'
+                    """)
+                    check_result = await session.execute(check_query, {"message_id": message_id})
+                    
+                    if not check_result.fetchone():
+                        # Store cancellation message
+                        cancellation_message_id = f"msg_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session_id}"
+                        order_query = text("""
+                            SELECT COALESCE(MAX(message_order), 0) + 1
+                            FROM chat_messages 
+                            WHERE session_id = :session_id
+                        """)
+                        order_result = await session.execute(order_query, {"session_id": session_id})
+                        message_order = order_result.scalar()
+                        
+                        insert_query = text("""
+                            INSERT INTO chat_messages (message_id, session_id, role, content, 
+                                                     message_order, timestamp, reply_to, type)
+                            VALUES (:message_id, :session_id, :role, :content, 
+                                   :message_order, NOW(), :reply_to, :type)
+                        """)
+                        await session.execute(insert_query, {
+                            "message_id": cancellation_message_id,
+                            "session_id": session_id,
+                            "role": "assistant",
+                            "content": "Response generation stopped by user.",
+                            "message_order": message_order,
+                            "reply_to": message_id,
+                            "type": "cancelled"
+                        })
+                        
+                        # Update session message count
+                        await session.execute(text("""
+                            UPDATE chat_sessions 
+                            SET message_count = message_count + 1, updated_at = NOW()
+                            WHERE session_id = :session_id
+                        """), {"session_id": session_id})
+                
+                return is_cancelled
+        except Exception as e:
+            logger.error(f"Failed to check message cancellation: {e}")
+            return False
+    
+    async def get_cancellation_message(self, message_id: str) -> Optional[Dict[str, Any]]:
+        """Get the cancellation message for a given user message"""
+        try:
+            async with self.get_session() as session:
+                query = text("""
+                    SELECT message_id, session_id, role, content, message_order, timestamp, reply_to, type
+                    FROM chat_messages 
+                    WHERE reply_to = :message_id AND type = 'cancelled'
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                """)
+                result = await session.execute(query, {"message_id": message_id})
+                row = result.fetchone()
+                
+                if row:
+                    return {
+                        "message_id": row.message_id,
+                        "session_id": row.session_id,
+                        "role": row.role,
+                        "content": row.content,
+                        "message_order": row.message_order,
+                        "timestamp": row.timestamp.isoformat(),
+                        "reply_to": row.reply_to,
+                        "type": row.type
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get cancellation message: {e}")
+            return None
+
 # Global database service instance
 _db_service = None
 

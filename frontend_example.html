@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TIC Research Chatbot - Cancellation Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .chat-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            text-align: right;
+        }
+        .assistant-message {
+            background-color: #f1f8e9;
+        }
+        .status-message {
+            background-color: #fff3e0;
+            font-style: italic;
+        }
+        .error-message {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        .cancelled-message {
+            background-color: #fce4ec;
+            color: #ad1457;
+        }
+        .input-section {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .send-btn {
+            background-color: #4caf50;
+            color: white;
+        }
+        .send-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .stop-btn {
+            background-color: #f44336;
+            color: white;
+        }
+        .stop-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .request-info {
+            background-color: #e8f5e8;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #ddd;
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background-color: #4caf50;
+            transition: width 0.3s ease;
+        }
+        #activeRequests {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <h1>TIC Research Chatbot - Cancellation Demo</h1>
+        
+        <div id="chat-messages"></div>
+        
+        <div class="progress-bar" id="progressBar" style="display: none;">
+            <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        
+        <div class="request-info" id="requestInfo" style="display: none;">
+            <strong>Current Request:</strong> <span id="currentRequestId">None</span><br>
+            <strong>Status:</strong> <span id="currentStatus">Idle</span>
+        </div>
+        
+        <div class="input-section">
+            <input type="text" id="userInput" placeholder="Ask about certifications, regulations, or compliance requirements..." />
+            <button id="sendBtn" class="send-btn" onclick="sendMessage()">Send</button>
+            <button id="stopBtn" class="stop-btn" onclick="stopGeneration()" disabled>Stop</button>
+        </div>
+        
+        <div id="activeRequests">
+            <h3>Active Requests</h3>
+            <div id="activeRequestsList">No active requests</div>
+            <button onclick="refreshActiveRequests()">Refresh</button>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = 'session_' + Date.now();
+        let currentRequestId = null;
+        let isGenerating = false;
+        let eventSource = null;
+
+        function addMessage(content, type = 'user') {
+            const messagesDiv = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            messageDiv.textContent = content;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateRequestInfo(requestId, status) {
+            document.getElementById('currentRequestId').textContent = requestId || 'None';
+            document.getElementById('currentStatus').textContent = status || 'Idle';
+            document.getElementById('requestInfo').style.display = requestId ? 'block' : 'none';
+        }
+
+        function updateProgress(percentage) {
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
+            
+            if (percentage > 0) {
+                progressBar.style.display = 'block';
+                progressFill.style.width = percentage + '%';
+            } else {
+                progressBar.style.display = 'none';
+            }
+        }
+
+        function setGenerating(generating) {
+            isGenerating = generating;
+            document.getElementById('sendBtn').disabled = generating;
+            document.getElementById('stopBtn').disabled = !generating;
+            document.getElementById('userInput').disabled = generating;
+            
+            if (!generating) {
+                currentRequestId = null;
+                updateRequestInfo(null, 'Idle');
+                updateProgress(0);
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            addMessage(message, 'user');
+            input.value = '';
+            setGenerating(true);
+            
+            try {
+                // Use streaming endpoint
+                const response = await fetch('http://localhost:8000/chat/stream_summary', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        content: message
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep incomplete line in buffer
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                handleStreamData(data);
+                            } catch (e) {
+                                console.error('Error parsing stream data:', e);
+                            }
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error sending message:', error);
+                addMessage('Error: ' + error.message, 'error');
+            } finally {
+                setGenerating(false);
+            }
+        }
+
+        function handleStreamData(data) {
+            switch (data.type) {
+                case 'status':
+                    addMessage('Status: ' + data.message, 'status');
+                    updateProgress(20);
+                    break;
+                    
+                case 'request_created':
+                    currentRequestId = data.request_id;
+                    updateRequestInfo(currentRequestId, 'Processing');
+                    updateProgress(30);
+                    break;
+                    
+                case 'router_decision':
+                    addMessage(`Workflow: ${data.workflow_type}`, 'status');
+                    updateProgress(40);
+                    break;
+                    
+                case 'search_progress':
+                    addMessage(`Search: ${data.message}`, 'status');
+                    updateProgress(60);
+                    break;
+                    
+                case 'summary_chunk':
+                    // Find or create assistant message div
+                    let assistantMsg = document.querySelector('.assistant-message:last-child');
+                    if (!assistantMsg || assistantMsg.dataset.completed) {
+                        assistantMsg = document.createElement('div');
+                        assistantMsg.className = 'message assistant-message';
+                        assistantMsg.textContent = '';
+                        document.getElementById('chat-messages').appendChild(assistantMsg);
+                    }
+                    assistantMsg.textContent += data.content;
+                    updateProgress(80);
+                    break;
+                    
+                case 'completed':
+                    const lastMsg = document.querySelector('.assistant-message:last-child');
+                    if (lastMsg) {
+                        lastMsg.dataset.completed = 'true';
+                    }
+                    updateRequestInfo(currentRequestId, 'Completed');
+                    updateProgress(100);
+                    setTimeout(() => setGenerating(false), 1000);
+                    break;
+                    
+                case 'cancelled':
+                    addMessage('Request cancelled: ' + data.message, 'cancelled');
+                    updateRequestInfo(currentRequestId, 'Cancelled');
+                    setGenerating(false);
+                    break;
+                    
+                case 'error':
+                    addMessage('Error: ' + data.message, 'error');
+                    setGenerating(false);
+                    break;
+            }
+        }
+
+        async function stopGeneration() {
+            if (!currentRequestId) {
+                addMessage('No active request to cancel', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('http://localhost:8000/chat/cancel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        request_id: currentRequestId,
+                        reason: 'User requested cancellation'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    addMessage(`Cancellation request sent. ${result.message}`, 'status');
+                    updateRequestInfo(currentRequestId, 'Cancelling...');
+                } else {
+                    addMessage('Failed to cancel request: ' + result.detail, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error cancelling request:', error);
+                addMessage('Error cancelling request: ' + error.message, 'error');
+            }
+        }
+
+        async function refreshActiveRequests() {
+            try {
+                const response = await fetch(`http://localhost:8000/chat/active_requests/${currentSessionId}`);
+                const data = await response.json();
+                
+                const listDiv = document.getElementById('activeRequestsList');
+                if (data.active_requests.length === 0) {
+                    listDiv.innerHTML = 'No active requests';
+                } else {
+                    listDiv.innerHTML = data.active_requests.map(req => 
+                        `<div>Request ID: ${req.request_id} (Created: ${new Date(req.created_at).toLocaleTimeString()})</div>`
+                    ).join('');
+                }
+                
+            } catch (error) {
+                console.error('Error fetching active requests:', error);
+                document.getElementById('activeRequestsList').innerHTML = 'Error fetching active requests';
+            }
+        }
+
+        // Enter key handler
+        document.getElementById('userInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !isGenerating) {
+                sendMessage();
+            }
+        });
+
+        // Initial load
+        refreshActiveRequests();
+        
+        // Auto-refresh active requests every 5 seconds
+        setInterval(refreshActiveRequests, 5000);
+    </script>
+</body>
+</html> 
