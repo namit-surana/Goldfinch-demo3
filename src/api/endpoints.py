@@ -10,6 +10,10 @@ import json
 import asyncio
 import aiohttp
 from ..models import DomainMetadata
+from ..models.requests import (
+    ChatStreamRequest, CancelRequest, ChatSendRequest,
+    HealthResponse, RootResponse, CancelResponse, ChatSendResponse
+)
 from ..core import DynamicTICResearchWorkflow
 from ..services.openai_service import OpenAIService
 from database.services import get_database_service
@@ -72,29 +76,29 @@ async def call_rag_api(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         raise
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
-    """Health check endpoint to confirm the API is running"""
+    """Health check endpoint to confirm the API is running and get system status"""
     print("[API] /health called")
-    result = {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0",
-        "database": "disconnected"
-    }
-    print("[API] /health result:", result)
+    result = HealthResponse(
+        status="healthy",
+        timestamp=datetime.now().isoformat(),
+        version="1.0.0",
+        database="disconnected"
+    )
+    print("[API] /health result:", result.dict())
     return result
 
 
-@router.get("/")
+@router.get("/", response_model=RootResponse, tags=["System"])
 async def root():
-    """Root endpoint with API information"""
-    return {
-        "message": "TIC Research API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "database": "disconnected"
-    }
+    """Root endpoint with API information and documentation links"""
+    return RootResponse(
+        message="TIC Research API",
+        version="1.0.0",
+        docs="/docs",
+        database="disconnected"
+    )
 
 
 def get_latest_user_message(messages: list) -> Optional[str]:
@@ -105,15 +109,11 @@ def get_latest_user_message(messages: list) -> Optional[str]:
     return None
 
 
-@router.post("/chat/cancel")
-async def cancel_request(request: dict):
-    """Cancel a user message or all messages in a session"""
+@router.post("/chat/cancel", response_model=CancelResponse, tags=["Chat"])
+async def cancel_request(request: CancelRequest):
+    """Cancel ongoing research requests by message ID or session ID"""
     try:
-        message_id = request.get("message_id")
-        session_id = request.get("session_id")
-        reason = request.get("reason", "User requested cancellation")
-        
-        if not message_id and not session_id:
+        if not request.message_id and not request.session_id:
             raise HTTPException(
                 status_code=400, 
                 detail="Either message_id or session_id is required"
@@ -121,16 +121,16 @@ async def cancel_request(request: dict):
         
         db_service = get_database_service()
         cancelled_count = 0
-        if message_id:
-            success = await db_service.cancel_message(message_id, reason)
+        if request.message_id:
+            success = await db_service.cancel_message(request.message_id, request.reason)
             cancelled_count = 1 if success else 0
-        elif session_id:
-            cancelled_count = await db_service.cancel_session_messages(session_id, reason)
-        return {
-            "status": "success" if cancelled_count > 0 else "no_active_requests",
-            "cancelled_count": cancelled_count,
-            "message": f"Cancelled {cancelled_count} request(s)"
-        }
+        elif request.session_id:
+            cancelled_count = await db_service.cancel_session_messages(request.session_id, request.reason)
+        return CancelResponse(
+            status="success" if cancelled_count > 0 else "no_active_requests",
+            cancelled_count=cancelled_count,
+            message=f"Cancelled {cancelled_count} request(s)"
+        )
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
@@ -138,12 +138,11 @@ async def cancel_request(request: dict):
         raise HTTPException(status_code=500, detail="Failed to cancel request")
 
 
-@router.post("/chat/stream_summary")
-async def chat_stream_summary(request: dict):
-    session_id = request.get("session_id")
-    content = request.get("content")
-    if not session_id or not content:
-        raise HTTPException(status_code=400, detail="session_id and content are required")
+@router.post("/chat/stream_summary", tags=["Chat"])
+async def chat_stream_summary(request: ChatStreamRequest):
+    """Stream research summary with real-time progress updates and cancellation support"""
+    session_id = request.session_id
+    content = request.content
 
     async def generate_stream():
         db_service = get_database_service()
@@ -379,16 +378,16 @@ async def chat_stream_summary(request: dict):
     return StreamingResponse(generate_stream(), media_type="text/plain")
 
 
-@router.post("/chat/send")
-async def chat_send(request: dict):
-
+@router.post("/chat/send", response_model=ChatSendResponse, tags=["Chat"])
+async def chat_send(request: ChatSendRequest):
     """
-    Unified chat endpoint: stores user message, triggers research, stores assistant reply, returns both messages and research summary.
+    Non-streaming chat endpoint that processes research requests and returns complete results.
+    
+    This endpoint stores the user message, performs research using AI workflows,
+    generates a summary, and returns all results in a single response.
     """
-    session_id = request.get("session_id")
-    content = request.get("content")
-    if not session_id or not content:
-        raise HTTPException(status_code=400, detail="session_id and content are required")
+    session_id = request.session_id
+    content = request.content
 
     db_service = get_database_service()
     openai_service = OpenAIService()
@@ -444,11 +443,11 @@ async def chat_send(request: dict):
             request_id=request_id,
             updates={"status": "completed", "processing_time": router_elapsed}
         )
-        return {
-            "success": True,
-            "user_message": user_message,
-            "assistant_message": assistant_message,
-            "research_summary": {
+        return ChatSendResponse(
+            success=True,
+            user_message=user_message,
+            assistant_message=assistant_message,
+            research_summary={
                 "request_id": request_id,
                 "status": "completed",
                 "message": "Direct LLM response provided.",
@@ -459,8 +458,8 @@ async def chat_send(request: dict):
                 "timestamp": datetime.now().isoformat(),
                 "processing_time": router_elapsed
             },
-            "summary": summary
-        }
+            summary=summary
+        )
 
     # Otherwise, run the research workflow
     parallel_queries = await openai_service.generate_and_map_research_queries(router_decision, enhanced_query, domain_metadata)
@@ -505,10 +504,10 @@ async def chat_send(request: dict):
         type="text"
     )
 
-    return {
-        "success": True,
-        "user_message": user_message,
-        "assistant_message": assistant_message,
-        "research_summary": result,
-        "summary": summary
-    } 
+    return ChatSendResponse(
+        success=True,
+        user_message=user_message,
+        assistant_message=assistant_message,
+        research_summary=result,
+        summary=summary
+    ) 
