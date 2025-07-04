@@ -23,13 +23,9 @@ class OpenAIService:
         """Get router decision for which workflow to use"""
         from ..config import ROUTER_SYSTEM_PROMPT
         
-      
-        
         full_message = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}]
-        
         full_message.extend(chat_history or [])
        
-        
         try:
             # Add timeout for router decision (15 seconds)
             router_start = time.time()
@@ -45,8 +41,6 @@ class OpenAIService:
             
             # Execute with 15-second timeout
             response = await asyncio.wait_for(make_openai_call(), timeout=15.0)
-            
-            # print("[OPENAI SERVICE] router response:", response)
             
             router_time = time.time() - router_start
             
@@ -85,8 +79,6 @@ class OpenAIService:
             else:
                 generated_queries = [router_query]
             
-            # print("[OPENAI SERVICE] SYSTEM_PROMPT:", SYSTEM_PROMPT)
-            
             response = self.client.responses.parse(
                 model=self.model,
                 input=[
@@ -95,7 +87,6 @@ class OpenAIService:
                 ],
                 text_format=ResearchQueries
             )
-            # print("[OPENAI SERVICE] generate_research_queries response:", response)
             queries = response.output_parsed.queries
             print(f"✅ Generated {len(queries)} research queries:")
             for i, query in enumerate(queries, 1):
@@ -106,7 +97,7 @@ class OpenAIService:
             # Fallback: use the original question
             generated_queries = [router_query]
 
-            print(f"[DEBUG] Queries to be mapped ({len(queries)}): {queries}")
+        print(f"[DEBUG] Queries to be mapped ({len(queries)}): {queries}")
         
         # Phase 1: Map queries to relevant websites
         query_mappings = await self.map_queries_to_websites(generated_queries, dynamic_websites)
@@ -134,8 +125,6 @@ class OpenAIService:
         """Map generated queries to relevant websites using OpenAI"""
         from ..config import QUERY_MAPPING_PROMPT
         
-        # print("[OPENAI SERVICE] map_queries_to_websites called with:", generated_queries, dynamic_websites)
-        
         # Create rich website descriptions using all available metadata
         rich_website_descriptions = [
     (
@@ -157,8 +146,6 @@ class OpenAIService:
 
         user_prompt = f"Research Queries: {queries}\nWebsites: {available_websites}\n"
 
-        # print("[OPENAI SERVICE] user_prompt:", user_prompt)
-
         try:
             response = self.client.responses.parse(
                 model=self.model,
@@ -168,7 +155,6 @@ class OpenAIService:
                 ],
                 text_format=QueryMappings
             )
-            # print("[OPENAI SERVICE] map_queries_to_websites response:", response)
             # Debug: Print the raw output_parsed from OpenAI
             print(f"[DEBUG] OpenAI mapping response.output_parsed: {response.output_parsed}")
             mappings = [

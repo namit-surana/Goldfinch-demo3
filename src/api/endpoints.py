@@ -9,15 +9,13 @@ from typing import List, Dict, Any, Optional
 import json
 import asyncio
 import aiohttp
-from ..models import ResearchRequest, ResearchResultResponse, ResearchSummaryResponse, DomainMetadata
+from ..models import DomainMetadata
 from ..core import DynamicTICResearchWorkflow
 from ..services.openai_service import OpenAIService
-from database.services import get_llm_db_service, get_database_service
+from database.services import get_database_service
 import time
 
 router = APIRouter()
-
-
 
 
 async def call_rag_api(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -74,68 +72,6 @@ async def call_rag_api(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         raise
 
 
-# @router.get("/sessions/{session_id}/messages")
-# async def get_chat_messages(session_id: str, limit: int = 50):
-#     """Get chat messages for a session"""
-#     try:
-#         # Placeholder response - no database connection
-#         return {
-#             "messages": [
-#                 {
-#                     "message_id": "placeholder",
-#                     "role": "system",
-#                     "content": "Database connection not available",
-#                     "timestamp": datetime.now().isoformat(),
-#                     "message_order": 0,
-#                     "reply_to": None,
-#                     "is_summarized": False
-#                 }
-#             ]
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error retrieving messages: {str(e)}")
-
-
-# @router.get("/sessions/{session_id}/research-history")
-# async def get_research_history(session_id: str, limit: int = 10):
-#     """Get research history for a session"""
-#     try:
-#         # Placeholder response - no database connection
-#         return {
-#             "research_history": [
-#                 {
-#                     "request_id": "placeholder",
-#                     "enhanced_query": "Database connection not available",
-#                     "workflow_type": "placeholder",
-#                     "status": "placeholder",
-#                     "timestamp": datetime.now().isoformat(),
-#                     "processing_time": 0.0
-#                 }
-#             ]
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error retrieving research history: {str(e)}")
-
-
-# @router.post("/sessions")
-# async def create_session(
-#     user_email: str = "default@example.com",
-#     user_name: str = "Default User",
-#     session_name: Optional[str] = None
-# ):
-#     """Create a new chat session"""
-#     try:
-#         # Placeholder response - no database connection
-#         return {
-#             "session_id": "placeholder_session_id",
-#             "user_id": "placeholder_user_id",
-#             "session_name": session_name or "New Session",
-#             "created_at": datetime.now().isoformat()
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error creating session: {str(e)}")
-
-
 @router.get("/health")
 async def health_check():
     """Health check endpoint to confirm the API is running"""
@@ -167,10 +103,6 @@ def get_latest_user_message(messages: list) -> Optional[str]:
         if message.get("role") == "user":
             return message.get("content")
     return None
-
-
-
-
 
 
 @router.post("/chat/stream_summary")
@@ -341,7 +273,6 @@ async def chat_stream_summary(request: dict):
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(generate_stream(), media_type="text/plain")
-
 
 
 @router.post("/chat/send")
