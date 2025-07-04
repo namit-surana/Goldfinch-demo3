@@ -324,7 +324,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                                     role="assistant",
                                     content=full_summary + "\n\n[Generation stopped by user]",
                                     reply_to=user_message["message_id"],
-                                    type="partial"
+                                    type="text"
                                 )
                                 yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': partial_message})}\n\n"
                             else:
