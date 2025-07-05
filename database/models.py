@@ -1,5 +1,5 @@
 """
-Database models for Goldfinch Research API (updated to match latest schema)
+Database models for Internal_testing Research API (updated to match latest schema)
 """
 
 from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, Float, JSON, ForeignKey

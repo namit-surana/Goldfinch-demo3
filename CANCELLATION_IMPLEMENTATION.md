@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-This implementation adds comprehensive "stop generation" functionality to the Goldfinch Demo3 TIC Research chatbot. Users can now cancel ongoing research requests at any point during the process.
+This implementation adds comprehensive "stop generation" functionality to the Internal_testing Demo3 TIC Research chatbot. Users can now cancel ongoing research requests at any point during the process.
 
 ## 🗃️ Database Changes
 
