@@ -93,7 +93,7 @@ class DatabaseService:
     # =============================================================================
     
     async def store_message(self, session_id: str, role: str, content: str, 
-                          message_order: int = None, reply_to: str = None, type: str = None) -> Dict[str, Any]:
+                          message_order: int = None, reply_to: str = None, type: str = "text") -> Dict[str, Any]:
         """Store a chat message"""
         try:
             async with self.get_session() as session:
