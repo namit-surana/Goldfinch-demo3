@@ -375,7 +375,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
             logger.error(f"Error in chat stream: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred during processing'})}\n\n"
 
-    return StreamingResponse(generate_stream(), media_type="text/plain")
+    return StreamingResponse(generate_stream(), media_type="text/event-stream")
 
 
 @router.post("/chat/send", response_model=ChatSendResponse, tags=["Chat"])
