@@ -235,22 +235,48 @@ async def chat_stream_summary(request: ChatStreamRequest):
                     cancellation_message = await db_service.get_cancellation_message(message_id)
                     yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled by user', 'assistant_message': cancellation_message})}\n\n"
                     return
-                
-                # Stream the direct response
-                yield f"data: {json.dumps({'type': 'summary_chunk', 'content': enhanced_query})}\n\n"
-                
+
+                # Prepare fake research_result
+                research_result = {"search_results": [{"result": enhanced_query, "citations": [], "status": "completed"}]}
+
+                # Stream progress: Generating summary
+                yield f"data: {json.dumps({'type': 'status', 'message': 'Generating summary...'})}\n\n"
+
+                summary_stream = openai_service.generate_research_summary_streaming(
+                    recent_messages_simple, research_result
+                )
+
+                full_summary = ""
+                async for chunk in summary_stream:
+                    if await db_service.is_message_cancelled(message_id, session_id, skip_cancellation_message=True):
+                        if full_summary.strip():
+                            partial_message = await db_service.store_message(
+                                session_id=session_id,
+                                role="assistant",
+                                content=full_summary + "\n\n[Generation stopped by user]",
+                                reply_to=user_message["message_id"],
+                                type="text"
+                            )
+                            yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': partial_message})}\n\n"
+                        else:
+                            cancellation_message = await db_service.get_cancellation_message(message_id)
+                            yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': cancellation_message})}\n\n"
+                        return
+                    full_summary += chunk
+                    yield f"data: {json.dumps({'type': 'summary_chunk', 'content': chunk})}\n\n"
+
                 assistant_message = await db_service.store_message(
                     session_id=session_id,
                     role="assistant",
-                    content=enhanced_query,
+                    content=full_summary,
                     reply_to=user_message["message_id"]
                 )
-                
+
                 await db_service.update_research_request(
                     request_id=request_id,
                     updates={"status": "completed", "processing_time": router_elapsed}
                 )
-                
+
                 yield f"data: {json.dumps({'type': 'completed', 'assistant_message': assistant_message, 'request_id': request_id})}\n\n"
                 return
 
