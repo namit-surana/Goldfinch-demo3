@@ -157,6 +157,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                 type="text"
             )
             message_id = user_message["message_id"]
+            print(message_id)
             yield f"data: {json.dumps({'type': 'user_message', 'data': user_message})}\n\n"
 
             # Check cancellation before any processing
