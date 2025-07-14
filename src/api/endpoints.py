@@ -263,7 +263,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                     #         cancellation_message = await db_service.get_cancellation_message(message_id)
                     #         yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': cancellation_message})}\n\n"
                     #     return
-                    # full_summary += chunk
+                    full_summary += chunk
                     yield f"data: {json.dumps({'type': 'summary_chunk', 'content': chunk})}\n\n"
 
                 assistant_message = await db_service.store_message(
