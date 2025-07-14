@@ -342,23 +342,23 @@ async def chat_stream_summary(request: ChatStreamRequest):
                     full_summary = ""
                     async for chunk in summary_stream:
                         # Check for cancellation during summary generation
-                        if await db_service.is_message_cancelled(message_id, session_id, skip_cancellation_message=True):
-                            # Store partial summary if we have any content
-                            if full_summary.strip():
-                                # Store the partial summary as assistant message
-                                partial_message = await db_service.store_message(
-                                    session_id=session_id,
-                                    role="assistant",
-                                    content=full_summary + "\n\n[Generation stopped by user]",
-                                    reply_to=user_message["message_id"],
-                                    type="text"
-                                )
-                                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': partial_message})}\n\n"
-                            else:
-                                # No partial content, get the cancellation message
-                                cancellation_message = await db_service.get_cancellation_message(message_id)
-                                yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': cancellation_message})}\n\n"
-                            return
+                        # if await db_service.is_message_cancelled(message_id, session_id, skip_cancellation_message=True):
+                        #     # Store partial summary if we have any content
+                        #     if full_summary.strip():
+                        #         # Store the partial summary as assistant message
+                        #         partial_message = await db_service.store_message(
+                        #             session_id=session_id,
+                        #             role="assistant",
+                        #             content=full_summary + "\n\n[Generation stopped by user]",
+                        #             reply_to=user_message["message_id"],
+                        #             type="text"
+                        #         )
+                        #         yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': partial_message})}\n\n"
+                        #     else:
+                        #         # No partial content, get the cancellation message
+                        #         cancellation_message = await db_service.get_cancellation_message(message_id)
+                        #         yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': cancellation_message})}\n\n"
+                        #     return
                             
                         full_summary += chunk
                         yield f"data: {json.dumps({'type': 'summary_chunk', 'content': chunk})}\n\n"
