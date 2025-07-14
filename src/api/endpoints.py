@@ -249,21 +249,21 @@ async def chat_stream_summary(request: ChatStreamRequest):
 
                 full_summary = ""
                 async for chunk in summary_stream:
-                    if await db_service.is_message_cancelled(message_id, session_id, skip_cancellation_message=True):
-                        if full_summary.strip():
-                            partial_message = await db_service.store_message(
-                                session_id=session_id,
-                                role="assistant",
-                                content=full_summary + "\n\n[Generation stopped by user]",
-                                reply_to=user_message["message_id"],
-                                type="text"
-                            )
-                            yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': partial_message})}\n\n"
-                        else:
-                            cancellation_message = await db_service.get_cancellation_message(message_id)
-                            yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': cancellation_message})}\n\n"
-                        return
-                    full_summary += chunk
+                    # if await db_service.is_message_cancelled(message_id, session_id, skip_cancellation_message=True):
+                    #     if full_summary.strip():
+                    #         partial_message = await db_service.store_message(
+                    #             session_id=session_id,
+                    #             role="assistant",
+                    #             content=full_summary + "\n\n[Generation stopped by user]",
+                    #             reply_to=user_message["message_id"],
+                    #             type="text"
+                    #         )
+                    #         yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': partial_message})}\n\n"
+                    #     else:
+                    #         cancellation_message = await db_service.get_cancellation_message(message_id)
+                    #         yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled during summary generation', 'assistant_message': cancellation_message})}\n\n"
+                    #     return
+                    # full_summary += chunk
                     yield f"data: {json.dumps({'type': 'summary_chunk', 'content': chunk})}\n\n"
 
                 assistant_message = await db_service.store_message(

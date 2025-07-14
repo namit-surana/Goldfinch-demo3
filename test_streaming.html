@@ -146,14 +146,15 @@
 
             try {
                 // Start streaming request
-                const response = await fetch('http://127.0.0.1:8000/chat/stream_summary', {
+                const response = await fetch('https://bluejay-rqxe.onrender.com/ask/stream', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
+                        user_id: '12',
                         session_id: sessionId,
-                        content: content
+                        message: content
                     })
                 });
 
