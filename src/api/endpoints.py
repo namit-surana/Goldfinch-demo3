@@ -282,7 +282,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                 return
 
             # Stream progress: Research workflow
-            yield f"data: {json.dumps({'type': 'status', 'message': 'Generating research queries...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Searching the Internet...'})}\n\n"
             
             # Check for cancellation before starting research
             if await db_service.is_message_cancelled(message_id, session_id):

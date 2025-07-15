@@ -242,37 +242,6 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 print("[WORKFLOW] execute_workflow result:", result)
                 return result
                 
-            elif router_decision == "direct_response":
-                # Handle direct LLM response (no tool selected)
-                print_separator("💬 DIRECT LLM RESPONSE")
-                print(router_query)
-                workflow_start = time.time()
-                
-                result_data = {
-                    "request_id": str(uuid.uuid4()),
-                    "status": "completed",
-                    "message": "Direct LLM response provided.",
-                    "research_question": research_question,
-                    "workflow_type": "direct_response",
-                    "execution_summary": {
-                        "total_time_seconds": time.time() - workflow_start,
-                        "response_type": "direct_llm_response"
-                    },
-                    "search_results": [{
-                        "query": research_question,
-                        "result": router_query,
-                        "citations": [],
-                        "extracted_links": [],
-                        "status": "success",
-                        "search_type": "direct_llm_response",
-                        "websites": []
-                    }],
-                    "timestamp": datetime.now().isoformat(),
-                    "processing_time": time.time() - workflow_start
-                }
-                
-                print(f"✅ Direct response provided in {time.time() - workflow_start:.2f} seconds")
-                return result_data
                 
             else:
                 print(f"❌ Unknown tool selected: {router_decision}")
