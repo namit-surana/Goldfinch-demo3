@@ -278,7 +278,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                     updates={"status": "completed", "processing_time": router_elapsed}
                 )
 
-                yield f"data: {json.dumps({'type': 'completed', 'assistant_message': assistant_message, 'request_id': request_id})}\n\n"
+                yield f"data: {json.dumps({'type': 'completed', 'request_id': request_id})}\n\n"
                 return
 
             # Stream progress: Research workflow
@@ -388,7 +388,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                         updates={"status": "completed", "processing_time": time.time() - router_start}
                     )
                     
-                    yield f"data: {json.dumps({'type': 'completed', 'assistant_message': assistant_message, 'request_id': request_id})}\n\n"
+                    yield f"data: {json.dumps({'type': 'completed', 'request_id': request_id})}\n\n"
                 else:
                     yield f"data: {json.dumps({'type': 'error', 'message': 'Research workflow failed'})}\n\n"
                     
