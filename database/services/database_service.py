@@ -210,7 +210,7 @@ class DatabaseService:
                             "message_order": source_session.fetchone().message_order,
                             "count": count - len(messages)
                         })
-                        messages = [
+                        messages += [
                             {
                                 "message_id": row.message_id,
                                 "role": row.role,
@@ -220,11 +220,11 @@ class DatabaseService:
                                 "reply_to": row.reply_to,
                                 "type": row.type
                             }
-                            for row in result.fetchall()
-                        ] + messages
+                            for row in source_session_message.fetchall()
+                        ]
                     else: pass
                 else: pass
- 
+                print("\n\n\n\n\n", list(reversed(messages)), "\n\n\n\n\n")
                 return list(reversed(messages))  # Reverse to get chronological order
                 
         except Exception as e:
