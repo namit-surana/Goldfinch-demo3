@@ -212,23 +212,13 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
 
     async def route_research_request_with_progress(
         self, 
-        research_question: str, 
-        chat_history: Optional[List[Dict]] = None,
+        router_decision: str, 
+        enhanced_query: str,
         progress_callback=None
     ) -> Optional[Dict[str, Any]]:
         """Route research request with progress callbacks and cancellation support"""
         
         try:
-            # Get router decision with chat history context
-            router_answer = await self.openai_service.get_router_decision(chat_history)
-            if not router_answer:
-                return None
-                
-            router_decision = router_answer["type"]
-            router_query = router_answer["content"]
-            
-            print("[WORKFLOW] Router answer:", router_answer)
-            
             if router_decision == "Provide_a_List" or router_decision == "Search_the_Internet":
                 # Send progress update
                 if progress_callback:
@@ -237,7 +227,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 # Generate multiple queries and map them to websites
                 print("[WORKFLOW] Provide_a_List or Search_the_Internet selected. Generating queries...")
                 search_tasks = await self.openai_service.generate_and_map_research_queries(
-                    router_decision, router_query, self.dynamic_websites
+                    router_decision, enhanced_query, self.dynamic_websites
                 )
                 print("[WORKFLOW] Search tasks generated:", len(search_tasks))
                 
@@ -247,7 +237,7 @@ class DynamicTICResearchWorkflow(TICResearchWorkflow):
                 
                 # Execute workflow with progress and cancellation support
                 result = await self.execute_workflow_with_progress(
-                    router_decision, research_question, search_tasks, progress_callback
+                    router_decision, enhanced_query, search_tasks, progress_callback
                 )
                 print("[WORKFLOW] execute_workflow result:", result)
                 return result

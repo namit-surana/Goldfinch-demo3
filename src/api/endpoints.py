@@ -306,8 +306,8 @@ async def chat_stream_summary(request: ChatStreamRequest):
             try:
                 # Execute workflow with cancellation support
                 research_result = await workflow.route_research_request_with_progress(
+                    router_decision,
                     enhanced_query, 
-                    recent_messages_simple, 
                     search_progress_callback
                 )
                 
@@ -336,7 +336,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                     
                     # Generate summary with streaming
                     summary_stream = openai_service.generate_research_summary_streaming(
-                        recent_messages_simple, research_result
+                        recent_messages_simple, research_result["search_results"]
                     )
                     
                     full_summary = ""
