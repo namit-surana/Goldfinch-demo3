@@ -269,7 +269,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                 assistant_message = await db_service.store_message(
                     session_id=session_id,
                     role="assistant",
-                    # content=full_summary,
+                    content=full_summary,
                     reply_to=user_message["message_id"]
                 )
 
@@ -367,7 +367,7 @@ async def chat_stream_summary(request: ChatStreamRequest):
                     assistant_message = await db_service.store_message(
                         session_id=session_id,
                         role="assistant",
-                        # content=full_summary,
+                        content=full_summary,
                         reply_to=user_message["message_id"]
                     )
                     
