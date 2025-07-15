@@ -229,7 +229,7 @@ answers: {research_results}
             
             # Use OpenAI's streaming chat completions
             stream = self.client.chat.completions.create(
-                model=self.model,
+                model="gpt-4.1",
                 messages=[
                     {"role": "system", "content": RESEARCH_SUMMARY_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt}
