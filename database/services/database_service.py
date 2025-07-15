@@ -158,6 +158,7 @@ class DatabaseService:
                     "session_id": session_id,
                     "count": count
                 })
+
                 
                 # Return in chronological order
                 messages = [
@@ -172,7 +173,58 @@ class DatabaseService:
                     }
                     for row in result.fetchall()
                 ]
-                
+
+                if len(messages) < count:
+                    query = text("""
+                        SELECT session_type, session_message_metadata
+                        FROM chat_sessions
+                        WHERE session_id = :session_id
+                        LIMIT :1
+                    """)
+                    
+                    current_session = await session.execute(query, {
+                        "session_id": session_id,
+                    })
+                    if current_session.fetchone().session_type == "follow_up":
+                        query = text("""
+                            SELECT session_id, message_order
+                            FROM chat_messages
+                            WHERE message_id = :message_id
+                            LIMIT :1
+                        """)
+                        source_session = await session.execute(query, {
+                            "message_id": current_session.fetchone().session_message_metadata["source_message_id"],
+                        })
+                        session_id = result.fetchone().session_id
+
+                        query = text("""
+                            SELECT message_id, role, content, message_order, timestamp, reply_to, type
+                            FROM chat_messages
+                            WHERE session_id = :session_id AND message_order <= :message_order
+                            ORDER BY message_order DESC
+                            LIMIT :count
+                        """)
+                        
+                        source_session_message = await session.execute(query, {
+                            "session_id": source_session.fetchone().session_id,
+                            "message_order": source_session.fetchone().message_order,
+                            "count": count - len(messages)
+                        })
+                        messages = [
+                            {
+                                "message_id": row.message_id,
+                                "role": row.role,
+                                "content": row.content,
+                                "message_order": row.message_order,
+                                "timestamp": row.timestamp.isoformat(),
+                                "reply_to": row.reply_to,
+                                "type": row.type
+                            }
+                            for row in result.fetchall()
+                        ] + messages
+                    else: pass
+                else: pass
+ 
                 return list(reversed(messages))  # Reverse to get chronological order
                 
         except Exception as e:
