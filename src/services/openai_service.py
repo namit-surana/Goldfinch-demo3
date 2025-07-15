@@ -32,7 +32,9 @@ class OpenAIService:
             
             # Create the OpenAI call with timeout
             async def make_openai_call():
-                return self.client.chat.completions.create(
+                # Run the blocking client call in a separate thread so asyncio.wait_for can cancel it
+                return await asyncio.to_thread(
+                    self.client.chat.completions.create,
                     model=self.model,
                     messages=full_message,
                     tools=self.tools,
@@ -43,7 +45,7 @@ class OpenAIService:
             response = await asyncio.wait_for(make_openai_call(), timeout=15.0)
             
             router_time = time.time() - router_start
-            
+            print(router_time)
             if response.choices[0].message.tool_calls:
                 tool_call = response.choices[0].message.tool_calls[0]
                 function_name = tool_call.function.name
@@ -58,7 +60,7 @@ class OpenAIService:
                 
         except asyncio.TimeoutError:
             print("❌ Router timeout: Took longer than 15 seconds to decide. Stopping.")
-            return None
+            return {"type": "direct_response", "content": ""}
         except Exception as e:
             print(f"❌ Error in router: {e}")
             print("🛑 Stopping due to router error.")
