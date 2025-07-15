@@ -176,26 +176,27 @@ class DatabaseService:
 
                 if len(messages) < count:
                     query = text("""
-                        SELECT session_type, session_message_metadata
+                        SELECT session_type, source_message_metadata
                         FROM chat_sessions
                         WHERE session_id = :session_id
-                        LIMIT :1
+                        LIMIT 1
                     """)
                     
-                    current_session = await session.execute(query, {
+                    result = await session.execute(query, {
                         "session_id": session_id,
                     })
-                    if current_session.fetchone().session_type == "follow_up":
+                    current_session = result.fetchone()
+                    if current_session.session_type == "follow_up":
                         query = text("""
                             SELECT session_id, message_order
                             FROM chat_messages
                             WHERE message_id = :message_id
-                            LIMIT :1
+                            LIMIT 1
                         """)
-                        source_session = await session.execute(query, {
-                            "message_id": current_session.fetchone().session_message_metadata["source_message_id"],
+                        result = await session.execute(query, {
+                            "message_id": current_session.source_message_metadata["source_message_id"],
                         })
-                        session_id = result.fetchone().session_id
+                        source_session = result.fetchone()
 
                         query = text("""
                             SELECT message_id, role, content, message_order, timestamp, reply_to, type
@@ -206,8 +207,8 @@ class DatabaseService:
                         """)
                         
                         source_session_message = await session.execute(query, {
-                            "session_id": source_session.fetchone().session_id,
-                            "message_order": source_session.fetchone().message_order,
+                            "session_id": source_session.session_id,
+                            "message_order": source_session.message_order,
                             "count": count - len(messages)
                         })
                         messages += [
@@ -224,7 +225,6 @@ class DatabaseService:
                         ]
                     else: pass
                 else: pass
-                print("\n\n\n\n\n", list(reversed(messages)), "\n\n\n\n\n")
                 return list(reversed(messages))  # Reverse to get chronological order
                 
         except Exception as e:
