@@ -228,7 +228,6 @@ answers: {research_results}
 context: {context},
 answers: {research_results}
 """
-            print("\n\n\n\n\n", user_prompt, "\n\n\n\n\n")
             # Use OpenAI's streaming chat completions
             stream = self.client.chat.completions.create(
                 model="gpt-4.1",
