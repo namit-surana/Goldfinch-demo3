@@ -73,7 +73,7 @@ async def call_rag_api(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         
     except Exception as e:
         print(f"❌ Error calling RAG API: {str(e)}")
-        raise
+        return []
 
 
 @router.get("/health", response_model=HealthResponse, tags=["System"])
